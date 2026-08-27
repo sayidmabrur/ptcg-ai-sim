@@ -1,0 +1,26 @@
+# This repository is the simulator only: simulator/ holds the engine, the agent
+# bundle and the web app. The training pipeline lives in train/ and belongs in a
+# separate repository, so nothing outside simulator/ is tracked here.
+/*
+!/.gitignore
+!/simulator/
+
+# ---------------------------------------------------------------- inside simulator/
+# Card scans: 683 MB of artwork, and the one thing that would take this
+# repository from ~20 MB to ~700 MB. The board falls back to drawn text cards
+# when they are absent, so a clone is playable without them.
+simulator/card_images_en/
+
+# Build products. libcg.so is compiled from simulator/ptcg_engine/src by
+# build_engine.sh, which also installs it into each agent bundle; keeping a
+# binary in git only creates a copy that can go stale against the source.
+*.so
+*.dll
+*.dylib
+__pycache__/
+*.pyc
+
+# The agent's weights are the exception to the blanket rule the training repo
+# uses for *.pt: without them simulator/agents/ is a directory that cannot play,
+# and at 11 MB they sit far under GitHub's limits.
+!simulator/agents/**/*.pt

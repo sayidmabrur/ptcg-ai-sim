@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pokémon TCG — Player vs Agent</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>Pokémon TCG</h1>
+  <button id="newGame">New game</button>
+  <span id="loadout" class="loadout"></span>
+  <span id="build" class="loadout build"></span>
+  <label class="speedPick">Replay speed <select id="speed">
+    <option value="slow">slow</option><option value="normal">normal</option><option value="fast">fast</option>
+  </select></label>
+  <div id="status"></div>
+</header>
+
+<main>
+  <!-- The playmat: two mirrored halves, Active Spots facing each other across
+       the centre line, Bench behind each Active, Prizes on the outer left,
+       deck and discard on the outer right. -->
+  <div id="mat">
+    <section class="half opp" id="oppHalf">
+      <div class="nameplate">
+        <span class="who">Opponent</span>
+        <span class="sub" id="agentName"></span>
+        <span class="chips" id="oppChips"></span>
+      </div>
+      <div class="opp-hand" id="oppHand"></div>
+      <div class="bench-row" id="oppBench"></div>
+      <div class="main-row">
+        <div class="stack prizes" id="oppPrizes"></div>
+        <div class="active-slot" id="oppActive"></div>
+        <div class="stack piles" id="oppPiles"></div>
+      </div>
+    </section>
+
+    <div class="centre">
+      <div class="stadium-slot" id="stadium"></div>
+      <div class="turnbar" id="turnbar"></div>
+      <div class="looking" id="looking"></div>
+    </div>
+
+    <section class="half me" id="meHalf">
+      <div class="main-row">
+        <div class="stack prizes" id="mePrizes"></div>
+        <div class="active-slot" id="meActive"></div>
+        <div class="stack piles" id="mePiles"></div>
+      </div>
+      <div class="bench-row" id="meBench"></div>
+      <div class="nameplate">
+        <span class="who">You</span>
+        <span class="chips" id="meChips"></span>
+      </div>
+    </section>
+
+    <section class="handbar">
+      <h2>Your hand <span id="handCount"></span></h2>
+      <div class="hand" id="meHand"></div>
+    </section>
+  </div>
+
+  <aside>
+    <section id="choice">
+      <h2 id="prompt">No game in progress</h2>
+      <p id="choiceHint"></p>
+      <div id="options"></div>
+      <button id="confirm" hidden>Confirm</button>
+    </section>
+    <section id="logPanel">
+      <h2>Log</h2>
+      <div id="log"></div>
+    </section>
+  </aside>
+</main>
+
+<div id="stage"></div>
+<div id="tooltip" hidden></div>
+<!-- New game: deck picked in a dialog, either a prebuilt list shown as
+     [image] x N or one built by hand from the whole card pool. -->
+<div id="setupView" hidden><div class="setupInner">
+  <div class="setupHead">
+    <h2>New game</h2>
+    <div class="setupOpts">
+      <label>Opponent <select id="agent"></select></label>
+      <label>Seat <select id="seat">
+        <option value="-1">random</option><option value="0">player 0</option><option value="1">player 1</option>
+      </select></label>
+      <button id="startGame">Start game</button>
+      <button id="setupClose" class="ghost">Cancel</button>
+    </div>
+  </div>
+  <div class="setupBody">
+    <ul class="deckList" id="deckList"></ul>
+    <div class="deckPane">
+      <div class="deckPaneHead">
+        <h2 id="deckTitle">Deck</h2>
+        <span id="deckStatus" class="deckStatus"></span>
+      </div>
+
+      <!-- builder utilities: only shown for "Create your own..." -->
+      <div class="builder" id="builder" hidden>
+        <div class="builderBar">
+          <input id="search" type="search" placeholder="Search cards by name, ability or attack text…" autocomplete="off">
+          <select id="kindFilter">
+            <option value="">all types</option>
+            <option value="pokemon">Pokémon</option>
+            <option value="item">Item</option>
+            <option value="tool">Tool</option>
+            <option value="supporter">Supporter</option>
+            <option value="stadium">Stadium</option>
+            <option value="energy">Energy</option>
+          </select>
+          <button id="addToDeck">Add to Deck</button>
+          <button id="addFour" class="ghost">Add x4</button>
+        </div>
+        <div class="builderBar">
+          <select id="startFrom"><option value="">start from a prebuilt deck…</option></select>
+          <button id="clearDeck" class="ghost">Clear</button>
+          <button id="exportDeck" class="ghost">Export CSV</button>
+          <button id="importDeck" class="ghost">Import CSV</button>
+          <span class="hint" id="builderHint">click a result to select it, double-click to add</span>
+        </div>
+        <div class="results" id="results"></div>
+      </div>
+
+      <div class="deckGrid" id="deckGrid"></div>
+    </div>
+  </div>
+</div></div>
+
+
+<div id="pileView" hidden><div class="pileInner"><h2 id="pileTitle"></h2><div id="pileCards"></div><button id="pileClose">Close</button></div></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
