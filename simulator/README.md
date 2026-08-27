@@ -47,6 +47,31 @@ prebuilt lists — Crustle, Grimmsnarl ex, Alakazam, Mega Lucario ex — each re
 as one tile per distinct card with its count in the corner (`[image] x4`), so a
 list reads at a glance. Pick a deck, an opponent and a seat, then **Start game**.
 
+### Choosing an opponent
+
+The opponent is not a dropdown entry but a card of its own: the archetype's
+headline Pokémon (picked from the agent's decklist — the most numerous Pokémon
+ex in it), the architecture that pilots it, and the 60 cards it plays.
+
+The architecture is read from the checkpoint rather than described by hand.
+`describe_agent.py` walks the state dict — tensor shapes give the width, layer
+indices give the depth of each tower, the total gives the parameter count — and
+takes the head count and feed-forward multiplier from the constructor defaults
+in the bundle's own policy module, parsed with `ast` so that describing one
+bundle cannot import a module name a second bundle also uses. The result lands
+in `ARCH.json` beside the weights:
+
+    python describe_agent.py agents/grimmsnarl_ex_xattn
+
+    Cross-attention pointer transformer
+    Parameters        2,685,443       Decision chain     30 frames
+    Embedding dim     64              Opponent history   30 frames
+    Attention heads   2               Trained by         behavioural cloning
+    Layers            20 across 4 towers (chain 8, context 2, history 8, cross 2)
+
+Run it once when registering a bundle; the server reads the JSON, so it never
+imports torch itself.
+
 ### Create your own…
 
 The fifth entry swaps the preview for a builder over the whole 1267-card pool:
@@ -303,7 +328,8 @@ rest.
 | `engine.py` | one live battle, driven seat by seat; deck loading; log filtering |
 | `render.py` | raw observation → the view model the browser draws (card names, option sentences, log lines) |
 | `opponents.py` | the registry under `agents/`, and the pipe to a bundle's process |
-| `agents/` | one directory per registered opponent (`main.py`, `deck.csv`, weights) |
+| `agents/` | one directory per registered opponent (`main.py`, `deck.csv`, weights, `ARCH.json`) |
+| `describe_agent.py` | reads a checkpoint and writes the `ARCH.json` the picker shows |
 | `agent_worker.py` | one bundle, loaded in its own interpreter, answering selections |
 | `static/` | the page (`index.html`, `app.js`, `style.css`), served `no-cache` so an edited asset survives a plain reload |
 | `ptcg_engine/` | the whole engine: `src/` (C++) and the ctypes bindings; `build_engine.sh` makes `libcg.so` |

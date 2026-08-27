@@ -43,13 +43,16 @@ let prebuilt = [];         // the prebuilt decklists, expanded into rows
 let chosenDeck = null;     // {name} for a prebuilt list, or null while building
 let customDeck = [];       // card ids, when building your own
 let selectedCard = null;   // the search result "Add to Deck" acts on
+let agents = [];           // registered opponents, with archetype and architecture
+let chosenAgent = null;    // the one that will pilot the other seat
+let showing = "deck";      // which side of the dialog the right pane is showing
 
 async function loadConfig() {
-  const cfg = await api("/api/config");
-  fill($("agent"), cfg.agents);
   const decks = await api("/api/decks");
   prebuilt = decks.decks;
   fill($("startFrom"), ["start from a prebuilt deck…", ...prebuilt.map((d) => d.name)]);
+  agents = (await api("/api/agents")).agents;
+  if (agents.length && !chosenAgent) chosenAgent = agents[0].id;
   renderDeckList();
 }
 
@@ -64,22 +67,103 @@ function openSetup() {
 }
 
 function renderDeckList() {
+  renderAgentList();
   const list = $("deckList");
   list.innerHTML = "";
   for (const deck of prebuilt) {
-    const li = el("li", chosenDeck === deck.name ? "on" : "",
+    const li = el("li", chosenDeck === deck.name && showing === "deck" ? "on" : "",
       `<span>${deck.name}</span><span class="n">${deck.total}</span>`);
     li.addEventListener("click", () => chooseDeck(deck.name));
     list.appendChild(li);
   }
-  const own = el("li", `custom ${chosenDeck === null ? "on" : ""}`,
+  const own = el("li", `custom ${chosenDeck === null && showing === "deck" ? "on" : ""}`,
     `<span>Create your own…</span><span class="n">${customDeck.length || ""}</span>`);
   own.addEventListener("click", () => chooseCustom());
   list.appendChild(own);
 }
 
+/** Opponents in the same list style as the decks: name, and what it plays. */
+function renderAgentList() {
+  const list = $("agentList");
+  list.innerHTML = "";
+  for (const agent of agents) {
+    const archetype = (agent.archetype || {}).name || "";
+    const li = el("li", `agentRow ${chosenAgent === agent.id && showing === "agent" ? "on" : ""}`,
+      `<span class="agentId">${agent.id}</span>` +
+      `<span class="agentSub">${archetype.replace(/^.*'s /, "")}` +
+      `${agent.arch && agent.arch.parameters ? ` · ${(agent.arch.parameters / 1e6).toFixed(1)}M` : ""}</span>`);
+    li.addEventListener("click", () => chooseAgent(agent.id));
+    list.appendChild(li);
+  }
+  $("pickedAgent").textContent = chosenAgent ? `vs ${chosenAgent}` : "no opponent registered";
+}
+
+/** Show one opponent: the deck it pilots, and what its policy actually is. */
+function chooseAgent(id) {
+  chosenAgent = id;
+  showing = "agent";
+  $("builder").hidden = true;
+  const agent = agents.find((a) => a.id === id);
+  const arch = agent.arch || {};
+  const archetype = agent.archetype || {};
+  $("deckTitle").textContent = agent.id;
+  setStatus(`${agent.deckTotal} cards · ${agent.deck.length} different`, "good");
+
+  const grid = $("deckGrid");
+  grid.innerHTML = "";
+  const sheet = el("div", "agentSheet");
+  if (archetype.image) {
+    const art = el("div", "agentArt");
+    const img = el("img");
+    img.src = archetype.image;
+    img.alt = archetype.name;
+    art.appendChild(img);
+    art.appendChild(el("div", "agentDeckName", archetype.name || ""));
+    sheet.appendChild(art);
+  }
+  const spec = el("div", "agentSpec");
+  spec.appendChild(el("div", "agentFamily", arch.family || "policy network"));
+  const rows = [
+    ["Parameters", arch.parameters && arch.parameters.toLocaleString()],
+    ["Embedding dim", arch.dim],
+    ["Attention heads", arch.heads],
+    ["Layers", arch.layers && `${arch.layers} across ${Object.keys(arch.towers || {}).length} towers`],
+    ...Object.entries(arch.towers || {}).map(([name, n]) => [`· ${name.replace(/_/g, " ")}`, n]),
+    ["Feed-forward", arch.ffMult && `${arch.ffMult}× dim`],
+    ["Dropout", arch.dropout],
+    ["Decision chain", arch.decisionChain && `${arch.decisionChain} frames`],
+    ["Opponent history", arch.opponentHistory && `${arch.opponentHistory} frames`],
+    ["Trained by", arch.trainedBy],
+    ["Checkpoint", arch.checkpoint],
+  ].filter(([, value]) => value !== undefined && value !== null && value !== "");
+  const table = el("dl", "specTable");
+  for (const [label, value] of rows) {
+    table.appendChild(el("dt", null, label));
+    table.appendChild(el("dd", null, String(value)));
+  }
+  spec.appendChild(table);
+  if (!rows.length) {
+    spec.appendChild(el("div", "hint",
+      "No ARCH.json in this bundle — run `python describe_agent.py agents/<name>`."));
+  }
+  sheet.appendChild(spec);
+  grid.appendChild(sheet);
+
+  grid.appendChild(el("h2", "listHead", "The deck it pilots"));
+  const deck = el("div", "deckGrid inner");
+  for (const row of agent.deck) {
+    const wrap = el("div", "entry");
+    wrap.appendChild(cardEl(row, { extra: "mini-card" }));
+    wrap.appendChild(el("span", "xn", `x${row.count}`));
+    deck.appendChild(wrap);
+  }
+  grid.appendChild(deck);
+  renderDeckList();
+}
+
 function chooseDeck(name) {
   chosenDeck = name;
+  showing = "deck";
   $("builder").hidden = true;
   const deck = prebuilt.find((d) => d.name === name);
   $("deckTitle").textContent = name;
@@ -90,6 +174,7 @@ function chooseDeck(name) {
 
 async function chooseCustom() {
   chosenDeck = null;
+  showing = "deck";
   $("builder").hidden = false;
   $("deckTitle").textContent = "Your deck";
   if (!catalogue) {
@@ -180,7 +265,7 @@ function runSearch() {
 
 async function startGame() {
   const body = {
-    agent: $("agent").value,
+    agent: chosenAgent,
     seat: Number($("seat").value),
     humanDeck: chosenDeck,
     humanCards: chosenDeck === null ? customDeck : null,
@@ -194,7 +279,7 @@ async function startGame() {
     return;
   }
   $("setupView").hidden = true;
-  $("loadout").textContent = `${chosenDeck || "your own deck"} vs ${$("agent").value}`;
+  $("loadout").textContent = `${chosenDeck || "your own deck"} vs ${chosenAgent}`;
   picked = [];
   render();
 }
@@ -751,8 +836,8 @@ function render() {
   buildTargets();
 
   $("agentName").textContent = view.agent ? `· ${view.agent}` : "";
-  // Keep the picker showing the opponent actually in play (page reloads, /api/state).
-  if (view.agent && $("agent").value !== view.agent) $("agent").value = view.agent;
+  // Keep the picker on the opponent actually in play (page reloads, /api/state).
+  if (view.agent) chosenAgent = view.agent;
   $("status").textContent = statusLine();
 
   const events = view.events || [];

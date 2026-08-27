@@ -136,6 +136,47 @@ def _deck_listing(cards: list[int]) -> list[dict]:
     return rows
 
 
+def _archetype(cards: list[int]) -> dict:
+    """The deck's headline Pokémon — what a player would call the deck.
+
+    Picked from the decklist rather than stored: the most numerous Pokémon ex in
+    it, and failing that the most numerous Pokémon. That is the card the deck is
+    named after in every matchup sheet, and the one worth showing next to the
+    agent that pilots it.
+    """
+    counts: dict[int, int] = {}
+    for card_id in cards:
+        counts[card_id] = counts.get(card_id, 0) + 1
+    best = None
+    for card_id, count in counts.items():
+        card = render.card_info(card_id)
+        if card["kind"] != "pokemon":
+            continue
+        rank = (bool(card["megaEx"]), bool(card["ex"]), count, -card_id)
+        if best is None or rank > best[0]:
+            best = (rank, card)
+    if best is None:
+        return {}
+    card = best[1]
+    return {"name": card["name"], "image": card["image"], "cardId": card["id"]}
+
+
+@app.get("/api/agents")
+def agents() -> dict:
+    """Every registered opponent, with the deck it pilots and what it is."""
+    out = []
+    for name, bundle in agent_lib.discover_bundles().items():
+        cards = engine.read_deck(bundle / "deck.csv")
+        out.append({
+            "id": name,
+            "archetype": _archetype(cards),
+            "arch": agent_lib.agent_arch(bundle),
+            "deck": _deck_listing(cards),
+            "deckTotal": len(cards),
+        })
+    return {"agents": out}
+
+
 @app.get("/api/decks")
 def decks() -> dict:
     """The prebuilt decklists, expanded into card rows for the picker."""

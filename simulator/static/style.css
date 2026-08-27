@@ -405,3 +405,31 @@ button.ghost { background: transparent; }
   border: 1px solid #16294d;
 }
 .flycard.ko { box-shadow: 0 0 0 2px var(--bad), 0 8px 22px #000c; }
+
+/* -- opponent picker ------------------------------------------------------
+   The opponent is a policy and a deck, so it gets the same treatment as a deck:
+   the archetype's own card next to the architecture that pilots it. */
+.sideList { overflow: auto; border-right: 1px solid #2b3448; padding: 8px; }
+.sideList .deckList { border-right: none; padding: 0; overflow: visible; }
+.listHead {
+  font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--dim); margin: 10px 4px 4px; opacity: .8;
+}
+.pickedAgent { color: var(--dim); font-size: 12px; }
+.deckList li.agentRow { display: block; }
+.agentId { display: block; font-size: 12.5px; }
+.agentSub { display: block; color: var(--dim); font-size: 11px; margin-top: 2px; }
+
+.agentSheet { display: flex; gap: 16px; align-items: flex-start; width: 100%; }
+.agentArt { flex: 0 0 auto; text-align: center; }
+.agentArt img { width: 150px; border-radius: 8px; display: block; box-shadow: 0 6px 20px #0008; }
+.agentDeckName { font-size: 11px; color: var(--dim); margin-top: 6px; max-width: 150px; }
+.agentSpec { flex: 1 1 auto; min-width: 0; }
+.agentFamily { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+.specTable {
+  display: grid; grid-template-columns: max-content 1fr; gap: 3px 14px;
+  margin: 0; font-size: 12px;
+}
+.specTable dt { color: var(--dim); }
+.specTable dd { margin: 0; color: var(--ink); }
+.deckGrid.inner { padding: 0; overflow: visible; }

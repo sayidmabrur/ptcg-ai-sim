@@ -85,7 +85,7 @@
   <div class="setupHead">
     <h2>New game</h2>
     <div class="setupOpts">
-      <label>Opponent <select id="agent"></select></label>
+      <span class="pickedAgent" id="pickedAgent"></span>
       <label>Seat <select id="seat">
         <option value="-1">random</option><option value="0">player 0</option><option value="1">player 1</option>
       </select></label>
@@ -94,7 +94,12 @@
     </div>
   </div>
   <div class="setupBody">
-    <ul class="deckList" id="deckList"></ul>
+    <div class="sideList">
+      <h2 class="listHead">Your deck</h2>
+      <ul class="deckList" id="deckList"></ul>
+      <h2 class="listHead">Opponent</h2>
+      <ul class="deckList" id="agentList"></ul>
+    </div>
     <div class="deckPane">
       <div class="deckPaneHead">
         <h2 id="deckTitle">Deck</h2>

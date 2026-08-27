@@ -74,6 +74,17 @@ def available_agents() -> list[str]:
     return list(discover_bundles())
 
 
+def agent_arch(bundle: Path) -> dict:
+    """What the bundle's policy is, as recorded by ``describe_agent.py``."""
+    path = bundle / "ARCH.json"
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
 def agent_deck(spec: str) -> Path:
     """The decklist that comes with an opponent."""
     bundles = discover_bundles()
