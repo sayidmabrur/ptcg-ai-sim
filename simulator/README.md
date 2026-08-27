@@ -264,6 +264,15 @@ an Ability**, so an opponent's ability use is not in the observation and nothing
 is shown for it. Your own is announced from your click, which is the only place
 that information exists.
 
+A Pokémon in play can be *face-down*, which the engine reports as a slot that
+exists but holds nothing identifiable (`active == [None]`, as against `[]` for a
+genuinely empty Active Spot). That is where both players stand through Set Up,
+and where the opponent stays until the reveal. The board draws a card back for
+it — collapsing the two states made Set Up look like an empty mat and the
+Pokémon appear from nowhere on the first turn. Your own Active is face-down to
+you as well during Set Up: the engine does not put its identity in your
+observation, exactly as the card lies face-down on the table.
+
 ## Imperfect information
 
 The engine emits observation JSON for whichever seat owns the current decision,

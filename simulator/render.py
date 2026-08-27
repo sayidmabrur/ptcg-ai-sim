@@ -184,10 +184,24 @@ def pokemon_view(mon: dict | None) -> dict | None:
     return info
 
 
+def facedown_view() -> dict:
+    """A Pokémon that is in play but face-down.
+
+    The engine says these are different things: an *empty* Active Spot is
+    ``active == []``, while a face-down Pokémon standing in it is
+    ``active == [None]`` — which is where both players are during Set Up, and
+    where the opponent stays until the reveal. Collapsing the two made the board
+    look empty for the whole of Set Up and the Pokémon appear from nowhere when
+    the first turn began.
+    """
+    return card_info(None)
+
+
 def player_view(state: dict, reveal_hand: bool) -> dict:
+    active = state["active"]
     return {
-        "active": pokemon_view(state["active"][0]) if state["active"] else None,
-        "bench": [pokemon_view(m) for m in state["bench"]],
+        "active": (facedown_view() if active[0] is None else pokemon_view(active[0])) if active else None,
+        "bench": [pokemon_view(m) if m is not None else facedown_view() for m in state["bench"]],
         "benchMax": state["benchMax"],
         "deckCount": state["deckCount"],
         "discardCount": len(state["discard"]),
