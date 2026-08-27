@@ -72,6 +72,11 @@ in `ARCH.json` beside the weights:
 Run it once when registering a bundle; the server reads the JSON, so it never
 imports torch itself.
 
+Every line of the sheet carries a **(?)** that explains the term on hover — what
+an embedding dimension is, what each tower reads, what behavioural cloning means
+against PPO. The numbers say nothing to a reader who does not already have the
+vocabulary, and the sheet exists so they do not need it.
+
 ### Create your own…
 
 The fifth entry swaps the preview for a builder over the whole 1267-card pool:

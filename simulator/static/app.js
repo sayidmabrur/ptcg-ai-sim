@@ -98,6 +98,57 @@ function renderAgentList() {
   $("pickedAgent").textContent = chosenAgent ? `vs ${chosenAgent}` : "no opponent registered";
 }
 
+// What each line of the architecture sheet means, in the terms of *this*
+// network. Shown from the (?) beside each label — the numbers are meaningless to
+// a reader who does not already know the vocabulary, and the point of the sheet
+// is that they should not have to.
+const ARCH_HELP = {
+  "family":
+    "A pointer network: instead of choosing from a fixed list of actions, it scores every legal " +
+    "option the engine offers against the current state and points at one. That is what lets a " +
+    "choice name a specific card on the board — a fixed action vocabulary could not.",
+  "Parameters":
+    "The learned numbers in the checkpoint. Roughly, capacity: more can represent more, and needs " +
+    "more data to fit without memorising.",
+  "Embedding dim":
+    "The width of every vector inside the network. A card, a board and an option are each " +
+    "described by this many numbers.",
+  "Attention heads":
+    "Attention runs this many times in parallel in each layer, each head free to look at something " +
+    "different, and the results are concatenated.",
+  "Layers":
+    "Transformer blocks in total, summed over the towers listed below. Depth is how many rounds of " +
+    "\u201clook at everything else, then update\u201d each vector goes through.",
+  "· decision chain":
+    "Reads the decisions already made this turn, causally — step three sees steps one and two, not " +
+    "what comes after. A turn is a sequence of choices, not one choice.",
+  "· decision context":
+    "Reads the decision in front of it right now: the board, the prompt, and the legal options.",
+  "· opponent history":
+    "Reads what the opponent has been seen to do. It is the only model of the other seat the " +
+    "network has — their hand and deck are not in its input.",
+  "· option cross":
+    "Cross-attention: each legal option queries the state and the turn so far, so the score of an " +
+    "option depends on the position rather than on the option alone.",
+  "Feed-forward":
+    "The width of the small MLP inside each transformer block, as a multiple of the embedding dim.",
+  "Dropout":
+    "The fraction of activations randomly zeroed while training, to stop it leaning on any one " +
+    "feature. Disabled when playing.",
+  "Decision chain":
+    "How many of this turn's earlier decisions the network is shown.",
+  "Opponent history":
+    "How many past observations of the opponent's board the network is shown.",
+  "Training Method":
+    "Behavioural cloning is supervised imitation of recorded games — it learns to play like the " +
+    "games it was shown. PPO is reinforcement learning, improving against opponents by playing.",
+  "Checkpoint":
+    "The weights file inside the bundle that these numbers were read from.",
+};
+// The row has been labelled both ways; keep either spelling working so renaming
+// it in the sheet cannot silently drop its explanation.
+ARCH_HELP["Trained by"] = ARCH_HELP["Training Method"];
+
 /** Show one opponent: the deck it pilots, and what its policy actually is. */
 function chooseAgent(id) {
   chosenAgent = id;
@@ -122,7 +173,9 @@ function chooseAgent(id) {
     sheet.appendChild(art);
   }
   const spec = el("div", "agentSpec");
-  spec.appendChild(el("div", "agentFamily", arch.family || "policy network"));
+  const family = el("div", "agentFamily", arch.family || "policy network");
+  family.appendChild(helpMark(ARCH_HELP.family));
+  spec.appendChild(family);
   const rows = [
     ["Parameters", arch.parameters && arch.parameters.toLocaleString()],
     ["Embedding dim", arch.dim],
@@ -133,12 +186,14 @@ function chooseAgent(id) {
     ["Dropout", arch.dropout],
     ["Decision chain", arch.decisionChain && `${arch.decisionChain} frames`],
     ["Opponent history", arch.opponentHistory && `${arch.opponentHistory} frames`],
-    ["Trained by", arch.trainedBy],
+    ["Training Method", arch.trainedBy],
     ["Checkpoint", arch.checkpoint],
   ].filter(([, value]) => value !== undefined && value !== null && value !== "");
   const table = el("dl", "specTable");
   for (const [label, value] of rows) {
-    table.appendChild(el("dt", null, label));
+    const term = el("dt", null, label);
+    if (ARCH_HELP[label]) term.appendChild(helpMark(ARCH_HELP[label]));
+    table.appendChild(term);
     table.appendChild(el("dd", null, String(value)));
   }
   spec.appendChild(table);
@@ -149,7 +204,7 @@ function chooseAgent(id) {
   sheet.appendChild(spec);
   grid.appendChild(sheet);
 
-  grid.appendChild(el("h2", "listHead", "The deck it pilots"));
+  grid.appendChild(el("h2", "listHead", "The deck it's trained"));
   const deck = el("div", "deckGrid inner");
   for (const row of agent.deck) {
     const wrap = el("div", "entry");
@@ -381,8 +436,12 @@ function showTip(card, ev) {
   }
   tip.innerHTML = rows.join("");
   tip.hidden = false;
-  // Placed after measuring, and flipped rather than clamped: a card hovered near
-  // the bottom of the dialog was having its art cut off by the window edge.
+  placeTip(tip, ev);
+}
+
+/** Placed after measuring, and flipped rather than clamped: a card hovered near
+ *  the bottom of the dialog was having its art cut off by the window edge. */
+function placeTip(tip, ev) {
   tip.style.left = "0px";
   tip.style.top = "0px";
   const box = tip.getBoundingClientRect();
@@ -395,6 +454,21 @@ function showTip(card, ev) {
   tip.style.top = `${Math.max(pad, y)}px`;
 }
 function hideTip() { $("tooltip").hidden = true; }
+
+/** A (?) that explains a term on hover, in the same tooltip the cards use. */
+function helpMark(text) {
+  const mark = el("span", "help", "?");
+  mark.addEventListener("mousemove", (ev) => showHelp(text, ev));
+  mark.addEventListener("mouseleave", hideTip);
+  return mark;
+}
+
+function showHelp(text, ev) {
+  const tip = $("tooltip");
+  tip.innerHTML = `<div class="helpText">${text}</div>`;
+  tip.hidden = false;
+  placeTip(tip, ev);
+}
 
 // -- slots ------------------------------------------------------------------
 

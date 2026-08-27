@@ -433,3 +433,14 @@ button.ghost { background: transparent; }
 .specTable dt { color: var(--dim); }
 .specTable dd { margin: 0; color: var(--ink); }
 .deckGrid.inner { padding: 0; overflow: visible; }
+
+/* A (?) next to a term in the architecture sheet: hovering explains it. */
+.help {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 13px; margin-left: 5px; border-radius: 50%;
+  border: 1px solid #4a5570; color: var(--dim);
+  font-size: 9px; font-weight: 700; cursor: help; vertical-align: 1px;
+}
+.help:hover { border-color: var(--accent); color: var(--accent); }
+.agentFamily .help { width: 15px; height: 15px; font-size: 10px; vertical-align: 3px; }
+#tooltip .helpText { max-width: 280px; line-height: 1.5; }
