@@ -202,9 +202,14 @@ while measuring correctly on mine.
 
 **Your options are locked while the opponent plays.** A turn arrives as a batch
 of events, and acting immediately used to cancel the rest of the replay — the
-very thing it exists to show, and easy to do by accident. The panel now reads
-*Opponent is playing…* until the replay ends; **S**, a click anywhere over the
-board, or the panel's own **Skip to my turn** button ends it early.
+very thing it exists to show, and easy to do by accident. The panel reads
+*Opponent is playing…* until the replay ends.
+
+There is deliberately nothing on screen to skip with. A button in the panel and
+a click-anywhere-over-the-board shortcut both existed and both were too easy to
+hit by accident, and losing the turn you were waiting to watch is the one thing
+this must not do. The **S** key still cuts a replay short — a key is not
+something you press by mistake while watching.
 
 **The board moves with the narration, one action at a time.** This is the part
 that took three attempts to get right. The pop-ups were paced from the start,

@@ -677,7 +677,6 @@ async function playEvents(events, steps = []) {
   // replay exists to show — and it was easy to do by accident.
   replaying = true;
   replayingOpponent = list.some((ev) => ev.side === "opp");
-  $("stage").classList.add("live");
   renderChoice();
   let next = 1;   // steps[0] is already on screen: the board before the agent moved
   for (let i = 0; i < list.length; i++) {
@@ -696,7 +695,6 @@ async function playEvents(events, steps = []) {
   if (animating === token) animating = null;
   if (!animating) {
     replaying = false;
-    $("stage").classList.remove("live");
     drawFinal();          // land on the real position, hand and all
     $("status").textContent = statusLine();
     renderChoice();
@@ -704,11 +702,12 @@ async function playEvents(events, steps = []) {
 }
 
 /** End the replay now and hand the board back. */
+/** Cut the replay short. Bound to the S key only — deliberately not to anything
+ *  clickable, so it cannot happen by accident. */
 function skipReplay() {
   if (!replaying) return;
   animating = null;
   replaying = false;
-  $("stage").classList.remove("live");
   $("stage").innerHTML = "";
   drawFinal();
   $("status").textContent = statusLine();
@@ -876,14 +875,15 @@ function renderChoice() {
   }
   if (replaying) {
     // The options exist, but they belong to a board the player has not seen
-    // arrive yet. Hold them until the opponent's turn has finished playing out.
+    // arrive yet. Hold them until the turn has finished playing out.
     // A batch often ends with your own last action, so say whose turn is
     // actually being shown rather than always blaming the opponent.
     $("prompt").textContent = replayingOpponent ? "Opponent is playing…" : "Replaying your move…";
-    $("choiceHint").textContent = "press S, or click the board, to skip";
-    const skip = el("button", "option skip", "Skip to my turn");
-    skip.addEventListener("click", skipReplay);
-    box.appendChild(skip);
+    // No skip control on screen: a button here, or a click anywhere over the
+    // board, is too easy to hit by accident — and losing the turn you were
+    // waiting to watch is the one thing this must not do. The S key remains as
+    // a deliberate way out.
+    $("choiceHint").textContent = "watch their turn — press S to cut it short";
     return;
   }
 
@@ -1048,7 +1048,6 @@ $("importDeck").addEventListener("click", () => {
 document.addEventListener("keydown", (ev) => {
   if ((ev.key === "s" || ev.key === "S") && replaying && !ev.metaKey && !ev.ctrlKey) skipReplay();
 });
-$("stage").addEventListener("click", skipReplay);
 $("pileClose").addEventListener("click", () => { $("pileView").hidden = true; });
 $("pileView").addEventListener("click", (ev) => { if (ev.target.id === "pileView") $("pileView").hidden = true; });
 

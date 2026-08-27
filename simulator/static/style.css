@@ -176,7 +176,6 @@ aside {
 #options { display: flex; flex-direction: column; gap: 5px; min-height: 120px; flex: 1 1 auto; overflow: auto; }
 .option { text-align: left; background: #222a38; border: 1px solid #333c50; border-radius: 6px; padding: 5px 8px; cursor: pointer; }
 .option:hover, .option.hot { border-color: var(--accent); }
-.option.skip { border-color: var(--accent); color: var(--accent); text-align: center; }
 .option.picked { border-color: var(--pick); background: #24344f; }
 .option .kind { color: var(--dim); font-size: 10px; float: right; }
 #confirm { margin-top: 8px; width: 100%; flex: 0 0 auto; }
@@ -335,10 +334,6 @@ button.ghost { background: transparent; }
   display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
   padding-top: 12vh; gap: 8px;
 }
-/* Only while a replay is running does the stage take clicks — it covers the
-   whole viewport, so leaving it clickable would swallow every click on the
-   page. Skipping by clicking the board is the point of it. */
-#stage.live { pointer-events: auto; }
 .banner { pointer-events: none; }
 .banner {
   display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px;
