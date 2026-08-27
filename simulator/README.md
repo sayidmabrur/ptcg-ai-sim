@@ -42,10 +42,10 @@ everything else works unchanged, so a fresh clone is playable before the scans
 arrive.
 
 **New game** opens a dialog rather than a row of dropdowns, because a decklist
-is 60 cards and the only useful way to show one is to show the cards. The four
-prebuilt lists — Crustle, Grimmsnarl ex, Alakazam, Mega Lucario ex — each render
-as one tile per distinct card with its count in the corner (`[image] x4`), so a
-list reads at a glance. Pick a deck, an opponent and a seat, then **Start game**.
+is 60 cards and the only useful way to show one is to show the cards. The five
+prebuilt lists — Crustle, Grimmsnarl ex, Alakazam, Mega Lucario ex, Dragapult —
+each render as one tile per distinct card with its count in the corner
+(`[image] x4`), so a list reads at a glance. Pick a deck, an opponent and a seat, then **Start game**.
 
 ### Choosing an opponent
 
@@ -79,7 +79,7 @@ vocabulary, and the sheet exists so they do not need it.
 
 ### Create your own…
 
-The fifth entry swaps the preview for a builder over the whole 1267-card pool:
+The last entry swaps the preview for a builder over the whole 1267-card pool:
 
 - **Search** by name, ability text or attack text, with a card-type filter.
 - **Add to Deck** / **Add x4** for the selected card; double-click a result to
@@ -338,16 +338,67 @@ rest.
 | `agent_worker.py` | one bundle, loaded in its own interpreter, answering selections |
 | `static/` | the page (`index.html`, `app.js`, `style.css`), served `no-cache` so an edited asset survives a plain reload |
 | `ptcg_engine/` | the whole engine: `src/` (C++) and the ctypes bindings; `build_engine.sh` makes `libcg.so` |
-| `decks/` | the four prebuilt decklists, one card id per line |
+| `decks/` | the prebuilt decklists, one card id per line |
+| `sessions.py` | the table of live sessions: one worker process per player, capped and reaped |
+| `game_worker.py` | one battle, in its own interpreter, answering the server over a pipe |
+| `deploy/` | the Dockerfile, Space card and push script that put this on Hugging Face |
 | `card_images_en/` | card scans, kept out of git (683 MB) — see above |
 
 `render.py` began as the draft in `training_PPO_grimsnarl_ex/webplay/`; its log
 renderer was rewritten here against the real `LogType` fields (`value`, `head`,
 `isRecover`, the `*_REVERSE` variants).
 
-## One game per process
+## One game per process — one process per player
 
 `cg.sim.Battle` keeps the native battle pointer on a class attribute, so a
-process holds exactly one battle. The server is single-game and serialises
-requests behind a lock; starting a new game finishes the previous one. Run a
-second process on another port if you want two games at once.
+process holds exactly one battle. That is a hard constraint of the engine, not a
+choice, and it used to make the server single-game: one module-level battle
+behind a lock, where starting a game ended the previous one. Fine at your own
+keyboard, wrong the moment the URL is one two people can open — the second
+visitor's *New game* would silently reset the first's.
+
+So the server holds no battle at all. It holds a table of `game_worker.py`
+processes, one per session, and routes each request to the caller's own
+(`sessions.py`). The battle logic did not change: `game_worker.py` is the
+`_battle`/`_view` code that used to sit in `server.py`, moved behind a pipe. The
+isolation is the process boundary rather than any new locking, which is the only
+kind the engine allows.
+
+    browser  --X-Session: abc-->  server.py  --pipe-->  game_worker.py  --pipe-->  agent_worker.py
+                                     |                  (one battle)              (torch, one bundle)
+                                     +--> another session's worker, another game
+
+Read-only endpoints — the card pool, the decklists, the opponent sheets — are
+still answered in the server process, because they only read the engine's static
+tables and no battle is involved.
+
+A session is identified by an id the page generates and sends as `X-Session`,
+kept in `localStorage` so a reload returns you to your game. Deliberately not a
+cookie: deployed as a Space the page runs in an iframe on `huggingface.co`, where
+its own cookies are third-party and dropped by default, and every visitor would
+collapse into one session. Closing the tab posts `/api/leave` so a slot is freed
+at once rather than at the idle timeout.
+
+Two knobs, because a game costs a worker process plus a torch process — roughly
+1 GB once loaded — and running out of memory kills every game rather than the one
+that walked away:
+
+| variable | default | what it does |
+| --- | --- | --- |
+| `PTCG_MAX_SESSIONS` | 4 | games at once; beyond it `/api/new` answers 503 saying the server is full, instead of resetting someone's match |
+| `PTCG_IDLE_TIMEOUT` | 1200 | seconds a game may sit untouched before its processes are reclaimed |
+
+`GET /api/sessions` reports `{"live": n, "max": n, "playing": n}` — the one call
+worth making against a deployment that is misbehaving.
+
+## Playing it from anywhere
+
+`deploy/` turns this directory into a Hugging Face Space (Docker SDK):
+
+    hf auth login
+    ./deploy/push_to_space.sh <user>/<space> [--private]
+
+The image compiles the engine from `ptcg_engine/src` in a build stage — the same
+`build_engine.sh` a checkout runs — and carries the card scans, which go up once
+via LFS and are skipped by hash on later pushes. `deploy/README.md` has the
+details, the environment variables and how to run the same image locally.

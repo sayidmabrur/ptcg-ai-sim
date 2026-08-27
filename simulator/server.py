@@ -8,10 +8,13 @@ one of the repo's trained agents:
 
 Design notes
 ------------
-*One game per process.* The native engine keeps its battle pointer on a class
-attribute, so a second concurrent battle in the same process would stomp the
-first. There is therefore a single module-level battle behind a lock; starting a
-new game finishes the old one.
+*One game per process, one process per player.* The native engine keeps its
+battle pointer on a class attribute, so a second concurrent battle in the same
+process would stomp the first. This server therefore holds no battle at all: it
+routes each request to the caller's own ``game_worker.py`` process
+(``sessions.py``), which is what lets two people play at once. The read-only
+endpoints -- card pool, decklists, opponents -- are answered here, because they
+only read the engine's static tables.
 
 *The browser only ever sees the human seat's observation.* The engine emits
 JSON for the seat that owns the current decision, with the other seat's hand,
@@ -27,12 +30,12 @@ next position the human has to act on.
 from __future__ import annotations
 
 import argparse
-import random
+import os
 import sys
-import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -44,13 +47,26 @@ if str(_HERE) not in sys.path:
 import opponents as agent_lib  # noqa: E402
 import engine  # noqa: E402
 import render  # noqa: E402
+import sessions  # noqa: E402
 
-app = FastAPI(title="PTCG player-vs-agent simulator")
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """Take the session workers down with the server.
 
-_lock = threading.Lock()
-_battle: engine.Battle | None = None
-_agent_name = "random"
-_history: list[str] = []
+    A game is two child processes; a server that exits without reaping them
+    leaves them holding their memory, which on a container that restarts often
+    is how a machine fills up.
+    """
+    yield
+    sessions.registry.close_all()
+
+
+app = FastAPI(title="PTCG player-vs-agent simulator", lifespan=_lifespan)
+
+# The header the page identifies itself with. Not a cookie: the Space is usually
+# viewed in an iframe on huggingface.co, where the Space's own cookies are
+# third-party and dropped by default.
+SESSION_HEADER = "X-Session"
 
 
 class NewGame(BaseModel):
@@ -64,59 +80,21 @@ class Choice(BaseModel):
     options: list[int]
 
 
-def _view() -> dict:
-    """The payload for the browser, drawn from the human's own observation."""
-    assert _battle is not None
-    fresh = _battle.take_logs()
-    seat = _battle.human_seat
-    _history.extend(render.log_lines(fresh, seat))
-    # The same events, in the shape the board animates them. Consumed once, with
-    # the log lines, so a page reload does not replay a turn that already ran.
-    events = render.log_events(fresh, seat)
-    # The board after each of the agent's decisions, so the replay can move the
-    # cards one action at a time instead of jumping to the end of the turn.
-    steps = _battle.take_steps(len(fresh))
-    obs = _battle.view_obs
-    if obs is None:
-        # The agent has the first decision and the human has not observed yet.
-        return {
-            "ready": False,
-            "waitingOn": _agent_name,
-            "log": _history[-200:],
-            "events": events,
-            "steps": steps,
-            "result": _battle.result,
-            "finished": _battle.finished,
-        }
-    view = render.build_view(
-        obs,
-        _battle.human_seat,
-        _agent_name,
-        [],
-        your_turn=not _battle.finished and _battle.acting_seat == _battle.human_seat,
-        result=_battle.result,
-    )
-    view["ready"] = True
-    view["log"] = _history[-200:]
-    view["events"] = events
-    view["steps"] = steps
-    view["agent"] = _agent_name
-    # A bundle that raised is played on with a legal random move rather than
-    # forfeiting the human's game; say so instead of hiding it.
-    view["agentError"] = getattr(_battle.agent, "last_error", None)
-    if _battle.finished:
-        view["waitingOn"] = "nobody"
-        view["verdict"] = (
-            "Draw" if _battle.result == 2
-            else "You win" if _battle.result == _battle.human_seat else "You lose"
-        )
+def _session_reply(response: Response, sid: str, reply: dict) -> dict:
+    """A worker's answer, as the browser expects it: a view, or an HTTP error."""
+    response.headers[SESSION_HEADER] = sid
+    if not reply.get("ok"):
+        raise HTTPException(reply.get("status", 500), reply.get("detail", "game error"))
+    view = reply["view"]
+    view["session"] = sid
     return view
 
 
 @app.get("/api/config")
 def config() -> dict:
     """Decks you may pilot, and the opponents -- each of which brings its own deck."""
-    return {"decks": engine.deck_names(), "agents": agent_lib.available_agents()}
+    return {"decks": engine.deck_names(), "agents": agent_lib.available_agents(),
+            "sessions": sessions.registry.stats()}
 
 
 def _deck_entry(card_id: int, count: int) -> dict:
@@ -201,66 +179,59 @@ def deck_check(cards: list[int]) -> dict:
 
 
 @app.post("/api/new")
-def new_game(request: NewGame) -> dict:
-    global _battle, _agent_name, _history
-    with _lock:
-        if _battle is not None:
-            _battle.close()
-            _battle = None
-        if request.humanCards is not None:
-            human_deck = list(request.humanCards)
-            problems = engine.deck_check(human_deck, render.card_db())
-            if problems:
-                raise HTTPException(400, "illegal deck: " + "; ".join(problems))
-        elif request.humanDeck is not None:
-            try:
-                human_deck = engine.deck_by_name(request.humanDeck)
-            except KeyError as exc:
-                raise HTTPException(400, f"unknown deck {exc}") from exc
-        else:
-            raise HTTPException(400, "no deck given")
+def new_game(request: NewGame, response: Response,
+             x_session: str | None = Header(default=None)) -> dict:
+    """Start a game in the caller's own worker, making one if they have none."""
+    try:
+        sid, session = sessions.registry.open(x_session)
+    except sessions.SessionBusy as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except (RuntimeError, OSError) as exc:
+        raise HTTPException(500, f"cannot start a game process: {exc}") from exc
+    try:
+        reply = session.request("new", request.model_dump())
+    except sessions.SessionGone as exc:
+        sessions.registry.drop(sid)
+        raise HTTPException(503, str(exc)) from exc
+    return _session_reply(response, sid, reply)
 
-        # The opponent's deck is not a separate choice: a bundle plays the 60
-        # cards it was trained on.
-        try:
-            agent_deck = engine.read_deck(agent_lib.agent_deck(request.agent))
-        except KeyError as exc:
-            raise HTTPException(400, f"unknown opponent {exc}") from exc
 
-        seat = request.seat if request.seat in (0, 1) else random.randint(0, 1)
-        try:
-            opponent = agent_lib.build_agent(request.agent)
-        except Exception as exc:  # a missing checkpoint, a bundle that will not load
-            raise HTTPException(400, f"cannot load opponent {request.agent}: {exc}") from exc
-        _agent_name = request.agent
-
-        try:
-            _battle = engine.Battle(human_deck, agent_deck, seat, opponent)
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        _history = []
-        _battle.advance()
-        return _view()
+def _forward(op: str, payload: dict, response: Response, sid: str | None) -> dict:
+    session = sessions.registry.get(sid)
+    if session is None:
+        # An unknown session is not an error to explain but a game to restart:
+        # the browser turns 409 into the New game dialog, as it always has.
+        raise HTTPException(409, "no game in progress")
+    try:
+        reply = session.request(op, payload)
+    except sessions.SessionGone as exc:
+        sessions.registry.drop(sid)
+        raise HTTPException(409, f"the game ended unexpectedly: {exc}") from exc
+    return _session_reply(response, sid, reply)
 
 
 @app.get("/api/state")
-def state() -> dict:
-    with _lock:
-        if _battle is None:
-            raise HTTPException(409, "no game in progress")
-        return _view()
+def state(response: Response, x_session: str | None = Header(default=None)) -> dict:
+    return _forward("state", {}, response, x_session)
 
 
 @app.post("/api/select")
-def select(choice: Choice) -> dict:
-    with _lock:
-        if _battle is None:
-            raise HTTPException(409, "no game in progress")
-        try:
-            _battle.select(choice.options)
-        except (ValueError, RuntimeError) as exc:
-            raise HTTPException(400, str(exc)) from exc
-        return _view()
+def select(choice: Choice, response: Response,
+           x_session: str | None = Header(default=None)) -> dict:
+    return _forward("select", choice.model_dump(), response, x_session)
+
+
+@app.post("/api/leave")
+def leave(x_session: str | None = Header(default=None)) -> dict:
+    """Give the session's processes back — a closed tab should not hold a slot."""
+    sessions.registry.drop(x_session)
+    return {"ok": True}
+
+
+@app.get("/api/sessions")
+def session_stats() -> dict:
+    """How many games this server is running, and how many it will run."""
+    return sessions.registry.stats()
 
 
 def _asset_stamp() -> str:
@@ -322,8 +293,11 @@ if render.IMAGE_DIR.is_dir():
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    # A container publishes a port to the outside world, so the defaults come
+    # from the environment: Hugging Face Spaces sets PORT=7860 and expects
+    # 0.0.0.0. Locally, neither is set and it stays a loopback server on 8000.
+    parser.add_argument("--host", default=os.environ.get("HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", "8000")))
     args = parser.parse_args()
 
     import uvicorn

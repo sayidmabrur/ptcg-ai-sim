@@ -68,6 +68,7 @@ DECKS = {
     "Grimmsnarl ex": DECK_DIR / "grimmsnarl_ex.csv",
     "Alakazam": DECK_DIR / "alakazam.csv",
     "Mega Lucario ex": DECK_DIR / "mega_lucario_ex.csv",
+    "Dragapult": DECK_DIR / "dragapult.csv",
 }
 
 # The deck-legality rules the engine enforces at ``BattleStart`` (Api.h). They

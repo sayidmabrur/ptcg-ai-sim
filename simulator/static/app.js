@@ -15,16 +15,46 @@ let view = null;
 let picked = [];        // option indices chosen so far this decision
 let targets = new Map();  // "side:area:index" -> [option index, ...]
 
+// Which game on the server is ours. The server runs one engine process per
+// session — the engine can only hold one battle per process — and this id is how
+// a request says which one it belongs to. It is kept in localStorage and sent as
+// a header rather than a cookie, because the page is normally viewed in an
+// iframe on huggingface.co, where the Space's own cookies are third-party and
+// silently dropped; a header behaves the same in an iframe as on a direct URL,
+// and surviving a reload is what lets you return to a game in progress.
+const SESSION_KEY = "ptcg.session";
+
+function sessionId() {
+  let id = null;
+  try { id = localStorage.getItem(SESSION_KEY); } catch (e) { id = null; }
+  if (!id) {
+    id = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
+    try { localStorage.setItem(SESSION_KEY, id); } catch (e) { /* private window */ }
+  }
+  return id;
+}
+
 async function api(path, body) {
+  const headers = { "X-Session": sessionId() };
+  if (body) headers["Content-Type"] = "application/json";
   const res = await fetch(path, {
     method: body ? "POST" : "GET",
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || res.statusText);
   return data;
 }
+
+// A closed tab should not hold a game process open until the idle reaper runs.
+// keepalive lets the request outlive the page; a failure here costs nothing.
+window.addEventListener("pagehide", () => {
+  try {
+    fetch("/api/leave", { method: "POST", keepalive: true,
+                          headers: { "X-Session": sessionId() } });
+  } catch (e) { /* nothing to do on the way out */ }
+});
 
 function el(tag, cls, html) {
   const n = document.createElement(tag);
