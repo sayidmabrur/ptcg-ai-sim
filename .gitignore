@@ -3,6 +3,7 @@
 # separate repository, so nothing outside simulator/ is tracked here.
 /*
 !/.gitignore
+!/README.md
 !/simulator/
 
 # ---------------------------------------------------------------- inside simulator/
