@@ -1119,12 +1119,29 @@ function renderChoice() {
   bits.push(many ? `choose ${sel.minCount}–${sel.maxCount}, then confirm` : "choose one");
   $("choiceHint").textContent = bits.join(" · ");
 
+  // Grouped under headings — Pokémon, Evolve, Energy, Trainer, Ability, Attack,
+  // Misc — because a main-phase list is otherwise thirty rows in the order the
+  // rules happened to walk, and a player looking for "can I evolve?" has to
+  // read all of it. A prompt whose options all fall in one group (choosing a
+  // card from the deck, say) keeps its flat list: a lone heading says nothing.
+  const groups = new Map();
   for (const opt of view.options) {
-    const b = el("button", "option", `<span class="kind">${opt.type}</span>${opt.label}`);
-    b.dataset.index = opt.index;
-    if (picked.includes(opt.index)) b.classList.add("picked");
-    b.addEventListener("click", () => pickOption(opt.index));
-    box.appendChild(b);
+    const name = opt.group || "Misc";
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(opt);
+  }
+  const order = view.groupOrder || [...groups.keys()];
+  const named = [...groups.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+
+  for (const name of named) {
+    if (named.length > 1) box.appendChild(el("h3", "optionGroup", name));
+    for (const opt of groups.get(name)) {
+      const b = el("button", "option", `<span class="kind">${opt.type}</span>${opt.label}`);
+      b.dataset.index = opt.index;
+      if (picked.includes(opt.index)) b.classList.add("picked");
+      b.addEventListener("click", () => pickOption(opt.index));
+      box.appendChild(b);
+    }
   }
   if (many) {
     const confirm = $("confirm");

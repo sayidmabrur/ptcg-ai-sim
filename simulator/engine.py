@@ -219,6 +219,8 @@ class Battle:
         self.view_obs: dict | None = None   # the most recent *human* observation
         self.pending_logs: list[dict] = []   # human-visible events not yet drawn
         self.pending_steps: list[dict] = []  # board after each agent decision
+        self._agent_trail: list[dict] = []    # the agent's turn, in case the match ends inside it
+        self._trail_open = False             # ...and whether it has started collecting
         self._delivered = 0                  # log entries handed to the browser since the agent moved
         self._shown_before = 0               # ...of those, the ones before the current batch
         self.finished = False
@@ -233,18 +235,41 @@ class Battle:
         return self.obs["current"]["yourIndex"]
 
     def _absorb(self) -> None:
-        """Fold the current observation into what the human is allowed to see."""
+        """Fold the current observation into what the human is allowed to see.
+
+        Normally the human's own next observation carries the whole of the
+        agent's turn, so nothing here has to be kept as it goes. When the match
+        *ends* on the agent's turn there is no next observation, and the agent's
+        final one holds only the slice since its previous decision — which is
+        how a game could end on "You lose" with the attack, the damage and the
+        Knock Out that caused it never shown. So the turn is also accumulated as
+        it happens, redacted, and used only if the human is never asked again.
+        """
         state = self.obs["current"]
         if state["result"] != -1:
             self.finished = True
             self.result = state["result"]
+        logs = self.obs.get("logs") or []
+
         if self.acting_seat == self.human_seat:
             self.view_obs = self.obs
-            self.pending_logs.extend(self.obs.get("logs") or [])
-        elif self.finished:
-            # The match ended on the agent's turn: its observation carries the
-            # RESULT log the human never otherwise sees. Take only the public part.
-            self.pending_logs.extend(public_logs(self.obs.get("logs") or [], self.agent_seat))
+            self.pending_logs.extend(logs)
+            # The human's own view supersedes the trail: it covers the same
+            # entries, unredacted, and keeping both would show the turn twice.
+            self._agent_trail.clear()
+            self._trail_open = False
+            return
+
+        if not self._trail_open:
+            # This first observation of the agent's turn reaches back over what
+            # the browser already holds; only what follows is new.
+            logs = logs[self._delivered:]
+            self._trail_open = True
+        self._agent_trail.extend(public_logs(logs, self.agent_seat))
+        if self.finished:
+            self.pending_logs.extend(self._agent_trail)
+            self._agent_trail.clear()
+            self._trail_open = False
 
     def advance(self) -> None:
         """Let the agent play until the human must choose (or the game ends).

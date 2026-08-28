@@ -281,6 +281,48 @@ def _board_card(state: dict, option: dict, seat: int) -> dict | None:
     return card_info(mon["id"]) if mon else None
 
 
+def _hand_card(state: dict, index: int | None) -> dict | None:
+    """The card at a hand index, for options that name one."""
+    hand = state.get("hand") or []
+    if index is None or index >= len(hand):
+        return None
+    return card_info(hand[index]["id"])
+
+
+# The order the groups appear in the panel: what you put down, what you build
+# up, what you spend, then what ends the turn. It follows the shape of a turn
+# rather than the engine's option order, which is whatever the rules walked.
+GROUP_ORDER = ["Pokémon", "Evolve", "Energy", "Pokémon Tool", "Trainer",
+               "Ability", "Attack", "Misc"]
+
+
+def option_group(option: dict, state: dict, seat: int) -> str:
+    """Which heading an option belongs under.
+
+    Grouped by what the *card* is, not by the engine's option type: playing a
+    Basic Pokémon and playing a Supporter are both ``PLAY``, and a player
+    reading the list thinks of them as different kinds of move.
+    """
+    kind = option.get("type")
+    me = state["players"][seat]
+
+    if kind == OptionType.EVOLVE:
+        return "Evolve"
+    if kind in (OptionType.ABILITY, OptionType.SKILL):
+        return "Ability"
+    if kind == OptionType.ATTACK:
+        return "Attack"
+    if kind == OptionType.PLAY:
+        card = _hand_card(me, option.get("index"))
+        return "Pokémon" if card and card["kind"] == "pokemon" else "Trainer"
+    if kind == OptionType.ATTACH:
+        card = _hand_card(me, option.get("index"))
+        if card and card["kind"] == "tool":
+            return "Pokémon Tool"
+        return "Energy"
+    return "Misc"
+
+
 def option_label(option: dict, state: dict, seat: int, select: dict) -> str:
     """A human sentence for one option, resolved against the acting seat's board."""
     kind = option.get("type")
@@ -640,6 +682,7 @@ def build_view(obs: dict, seat: int, agent_name: str, pending_logs: list[dict],
                 "label": option_label(opt, state, seat, select),
                 "refs": option_refs(opt, seat),
                 "type": _enum_name(OptionType, opt.get("type")),
+                "group": option_group(opt, state, seat),
             })
 
     context = select and _enum_name(SelectContext, select["context"])
@@ -676,5 +719,6 @@ def build_view(obs: dict, seat: int, agent_name: str, pending_logs: list[dict],
             "effect": card_info(select["effect"]["id"]) if select.get("effect") else None,
         },
         "options": options,
+        "groupOrder": GROUP_ORDER,
         "log": log_lines(pending_logs, seat),
     }

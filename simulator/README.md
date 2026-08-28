@@ -195,6 +195,14 @@ when the engine refuses a selection that passed the count check,
 all into an empty `IndexError`) and the reason appears next to the prompt with
 the picks intact, instead of as an empty message in the corner.
 
+The option list is grouped under headings — Pokémon, Evolve, Energy, Pokémon
+Tool, Trainer, Ability, Attack, Misc — in the order a turn takes rather than the
+order the rules happened to walk. The grouping is by what the *card* is, not by
+the engine's option type: playing a Basic and playing a Supporter are both
+`PLAY`, and a player reading the list thinks of them as different moves. A
+prompt whose options all fall in one group keeps its flat list, since a lone
+heading says nothing.
+
 Every legal choice is both a row in the side panel and a highlight on the board:
 the slots an option touches are outlined, hovering one highlights the matching
 row, and clicking the slot takes the option when only one lives there. Options
@@ -261,6 +269,16 @@ end. Measured from the DOM:
     +32602 ms  SAY    Opponent · Draw · drew a card
     +32603 ms  BOARD  opp ... hand=5
     +33604 ms  SAY    Opponent · Spikemuth Gym · played
+
+**The turn that ends the match is still shown.** Normally the human's own next
+observation carries the whole of the agent's turn, so nothing has to be kept as
+it happens. When the match *ends* on the agent's turn there is no next
+observation, and its final one holds only the slice since the agent's previous
+decision — which is how a game could end on "You lose" with the attack, the
+damage and the Knock Out that caused it never shown at all. The turn is now also
+accumulated as it happens, redacted through `public_logs`, and used only when
+the human is never asked again; the human's own view supersedes it otherwise, so
+a turn is never shown twice.
 
 **A Knock Out resolves in order.** The attack is announced, the damage lands,
 the Pokémon goes to the discard pile, the prize is taken — and only then does

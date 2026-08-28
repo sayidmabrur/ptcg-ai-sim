@@ -446,3 +446,11 @@ button.ghost { background: transparent; }
 .help:hover { border-color: var(--accent); color: var(--accent); }
 .agentFamily .help { width: 15px; height: 15px; font-size: 10px; vertical-align: 3px; }
 #tooltip .helpText { max-width: 280px; line-height: 1.5; }
+
+/* Headings inside the option list. Only drawn when a prompt actually spans more
+   than one kind of move — a single heading over a flat list says nothing. */
+.optionGroup {
+  font-size: 10px; letter-spacing: .09em; text-transform: uppercase;
+  color: var(--dim); margin: 8px 2px 2px; opacity: .85;
+}
+.optionGroup:first-child { margin-top: 0; }
