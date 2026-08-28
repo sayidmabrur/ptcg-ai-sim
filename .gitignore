@@ -6,6 +6,9 @@
 !/.gitattributes
 !/README.md
 !/simulator/
+!/.github/
+!/.github/workflows/
+!/.github/workflows/*.yml
 
 # ---------------------------------------------------------------- inside simulator/
 # Card scans: 683 MB of artwork, tracked via Git LFS (see .gitattributes)
