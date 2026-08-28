@@ -575,6 +575,17 @@ def log_events(logs: list[dict], seat: int) -> list[dict]:
                 "kind": "switch", "side": side, "card": active,
                 "name": (active or {}).get("name"), "serial": entry.get("serialBench"),
             })
+        elif kind == LogType.RESULT:
+            # The end of the match is an event like any other, so it lands as
+            # the last beat of the replay rather than as a verdict announced
+            # over a turn that is still being played out.
+            result = entry.get("result")
+            out.append({
+                "kind": "result",
+                "side": "me" if result == seat else "opp",
+                "name": "Draw" if result == 2 else ("You win" if result == seat else "You lose"),
+                "text": RESULT_REASON.get(entry.get("reason"), ""),
+            })
         elif kind == LogType.MOVE_ATTACHED:
             out.append({
                 "kind": "attach", "side": side, "serial": entry.get("serialAfter"),

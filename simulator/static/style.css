@@ -348,6 +348,8 @@ button.ghost { background: transparent; }
 .banner.theirs { border-color: #e06c6c88; }
 .banner.attack .title { color: var(--accent); }
 .banner.coin .title { color: #9fd0ff; }
+.banner.result { border-color: var(--accent); padding: 12px 20px; }
+.banner.result .title { font-size: 22px; color: var(--accent); }
 .banner.ability .title { color: #b7a4ff; }
 .banner.quiet { opacity: .92; }
 .banner.quiet .title { font-size: 14px; color: #cdd8ea; }

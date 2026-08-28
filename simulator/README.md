@@ -262,6 +262,26 @@ end. Measured from the DOM:
     +32603 ms  BOARD  opp ... hand=5
     +33604 ms  SAY    Opponent · Spikemuth Gym · played
 
+**A Knock Out resolves in order.** The attack is announced, the damage lands,
+the Pokémon goes to the discard pile, the prize is taken — and only then does
+the verdict appear. Three separate faults used to collapse that into one jump:
+
+- The batch opened on the board the human's own action had *already* reached, so
+  an attack could show its damage before it was animated. `select` now records
+  the position from before the choice was applied.
+- Every board landed past the last event, so nothing moved until the replay was
+  over. The agent's first observation reaches back over everything the browser
+  has already been shown since the agent last moved; `take_logs` counts exactly
+  that, and `take_steps` subtracts it.
+- The whole final turn was *filtered away*: when a match ends on the agent's
+  turn its observation is the only record, and `public_logs` dropped every entry
+  attributed to that seat. It now redacts instead — a draw and a move into a
+  private zone lose their card identity, everything the table can see is kept —
+  so the attack that ends the game is still narrated.
+
+The end of the match is itself an event, so the verdict is the closing beat of
+the replay rather than an announcement over a turn still being played out.
+
 **Cards travel between zones.** A snapshot swap alone means a drawn card simply
 appears in hand and a Knocked Out Pokémon simply stops existing, so each move
 also sends a copy of the card flying from where it was to where it is going —

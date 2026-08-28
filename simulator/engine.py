@@ -135,21 +135,63 @@ START_ERRORS = {
 }
 
 
-def public_logs(logs: list[dict], hidden_seat: int) -> list[dict]:
-    """Log entries safe to show a viewer who is *not* ``hidden_seat``.
+# Zones only their owner can see into. A card whose *destination* is one of
+# these keeps its identity secret; a card landing anywhere else is face-up on
+# the table and public to both seats.
+_PRIVATE_AREAS = {1, 2, 6, 12}          # deck, hand, prize, the cards you are looking at
 
-    Used only for the handful of events that land in the losing seat's final
-    observation. An entry attributed to ``hidden_seat`` may name a card that
-    seat drew or shuffled away — private information — so those are dropped;
-    entries about the viewer, and the match result, are kept.
+# Everything the table can see happen, whoever did it.
+_PUBLIC_TYPES = {
+    LogType.SHUFFLE, LogType.HAS_BASIC_POKEMON, LogType.TURN_START, LogType.TURN_END,
+    LogType.DRAW_REVERSE, LogType.MOVE_CARD_REVERSE, LogType.SWITCH, LogType.CHANGE,
+    LogType.PLAY, LogType.ATTACH, LogType.EVOLVE, LogType.DEVOLVE, LogType.MOVE_ATTACHED,
+    LogType.ATTACK, LogType.HP_CHANGE, LogType.POISONED, LogType.BURNED, LogType.ASLEEP,
+    LogType.PARALYZED, LogType.CONFUSED, LogType.COIN,
+}
+
+# Log entries that name a card the acting seat alone can see.
+_REDACT = {LogType.DRAW: LogType.DRAW_REVERSE, LogType.MOVE_CARD: LogType.MOVE_CARD_REVERSE}
+
+
+def public_logs(logs: list[dict], hidden_seat: int) -> list[dict]:
+    """``logs`` as a viewer who is not ``hidden_seat`` may see them.
+
+    Reached only through the losing seat's final observation, which is the one
+    place the human's own view never arrives: when the match ends on the agent's
+    turn, this is the only record of the attack that ended it.
+
+    Dropping everything attributed to that seat — which is what this used to do
+    — threw the decisive turn away with it, so the game ended in silence with
+    the board already rearranged. Public actions are kept instead, and only the
+    two entry types that can name a card the other seat cannot see are reduced
+    to their face-down forms: a draw, and a move *into* a private zone. An
+    unfamiliar entry type is still dropped rather than guessed at.
     """
     keep = []
     for entry in logs:
-        if entry.get("type") == LogType.RESULT:
+        kind = entry.get("type")
+        if kind == LogType.RESULT or entry.get("playerIndex") != hidden_seat:
             keep.append(entry)
-        elif entry.get("playerIndex") != hidden_seat:
+            continue
+        if kind == LogType.DRAW:
+            keep.append({"type": LogType.DRAW_REVERSE, "playerIndex": entry.get("playerIndex")})
+        elif kind == LogType.MOVE_CARD:
+            public_destination = entry.get("toArea") not in _PRIVATE_AREAS
+            if public_destination:
+                keep.append(entry)
+            else:
+                keep.append({
+                    "type": LogType.MOVE_CARD_REVERSE,
+                    "playerIndex": entry.get("playerIndex"),
+                    "fromArea": entry.get("fromArea"),
+                    "toArea": entry.get("toArea"),
+                })
+        elif kind in _PUBLIC_TYPES:
             keep.append(entry)
     return keep
+
+
+
 
 
 class Battle:
@@ -177,6 +219,8 @@ class Battle:
         self.view_obs: dict | None = None   # the most recent *human* observation
         self.pending_logs: list[dict] = []   # human-visible events not yet drawn
         self.pending_steps: list[dict] = []  # board after each agent decision
+        self._delivered = 0                  # log entries handed to the browser since the agent moved
+        self._shown_before = 0               # ...of those, the ones before the current batch
         self.finished = False
         self.result = -1
         if hasattr(agent, "reset"):
@@ -221,6 +265,9 @@ class Battle:
             self.obs = raw_select(list(choice))
             self._absorb()
             self._snapshot()
+            # From here the agent's next observation starts fresh, so nothing
+            # delivered before it has to be subtracted again.
+            self._delivered = self._shown_before = 0
 
     def _snapshot(self, delta: int | None = None) -> None:
         """Record the board, and how many log entries the step that made it wrote.
@@ -262,6 +309,12 @@ class Battle:
 
     def take_logs(self) -> list[dict]:
         logs, self.pending_logs = self.pending_logs, []
+        # What the browser has been given since the agent last moved. The agent's
+        # next observation reaches back over all of it — a player often takes
+        # several decisions in a row — and subtracting it is what puts this
+        # batch's boards among its own events instead of past the last one.
+        self._shown_before = self._delivered
+        self._delivered += len(logs)
         return logs
 
     def take_steps(self, batch_size: int) -> list[dict]:
@@ -277,16 +330,27 @@ class Battle:
         reaches back past the human's last view.
         """
         steps, self.pending_steps = self.pending_steps, []
-        agent_deltas = [step.pop("_delta") for step in steps][1:]
-        position = max(0, batch_size - sum(agent_deltas))
-        for i, step in enumerate(steps):
-            # An agent turn holding entries the human may not see counts more
-            # steps than the redacted batch has room for. Pinning the overflow
-            # to the end of the batch lands those boards on the closing beat
-            # rather than past it, where the replay would never reach them.
-            step["logsSoFar"] = min(position, batch_size)
-            if i < len(agent_deltas):
-                position += agent_deltas[i]
+        deltas = [step.pop("_delta") for step in steps]
+        if not steps:
+            return steps
+
+        steps[0]["logsSoFar"] = 0
+        if len(steps) > 1:
+            # The observation the agent first acts on reaches back past the
+            # human's last view: its log holds everything that view already
+            # showed, *plus* whatever the human's own action wrote. Only the
+            # latter belongs to this batch. Counting it whole is what pushed
+            # every board past the last event, so none of them landed until the
+            # replay was over and the whole turn arrived at once.
+            steps[1]["logsSoFar"] = min(max(0, deltas[1] - self._shown_before), batch_size)
+        position = steps[1]["logsSoFar"] if len(steps) > 1 else 0
+        for i in range(2, len(steps)):
+            position += deltas[i]
+            steps[i]["logsSoFar"] = min(position, batch_size)
+        # The last snapshot came from the *next* observation, whose log spans the
+        # whole batch rather than the decision that produced this board. It is
+        # the final position either way, so it belongs at the end.
+        steps[-1]["logsSoFar"] = batch_size
         return steps
 
     def close(self) -> None:

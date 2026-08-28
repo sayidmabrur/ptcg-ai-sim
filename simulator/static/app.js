@@ -767,7 +767,7 @@ function highlight(ev, cls, ms) {
 // multiplies the lot.
 const MIN_BEAT = 1000;
 const BEATS = {
-  attack: 1800, play: 1400, evolve: 1400, mulligan: 1400, condition: 1200,
+  result: 2200, attack: 1800, play: 1400, evolve: 1400, mulligan: 1400, condition: 1200,
   coin: 1200, damage: 1200, heal: 1200, switch: 1200, move: 1100,
   attach: 1000, recover: 1000, draw: 1000, shuffle: 1000,
 };
@@ -836,6 +836,11 @@ function playEvent(ev, scale) {
       return beat();
     case "mulligan":
       banner(ev, "condition", "Mulligan", "no Basic Pokémon — redrawing", ms);
+      return beat();
+    case "result":
+      // The verdict is the closing beat, not an announcement over a turn still
+      // being played: the Pokémon has to reach the discard pile first.
+      banner(ev, "result", ev.name, ev.text, ms);
       return beat();
     default:
       return beat();
