@@ -924,7 +924,7 @@ function buildTargets() {
 function statusLine() {
   if (!view) return "";
   if (!view.ready) return `waiting on ${view.waitingOn}`;
-  if (view.finished) return `Game over — ${view.verdict}`;
+  if (view.finished && !replaying) return `Game over — ${view.verdict}`;
   return `Turn ${view.turn} · you are player ${view.seat} · ` +
     (view.yourTurn ? "your move" : `waiting on ${view.waitingOn}`);
 }
@@ -1052,16 +1052,6 @@ function renderChoice() {
   $("confirm").hidden = true;
   $("choiceHint").classList.remove("bad");
 
-  if (view.finished) {
-    $("prompt").textContent = `Game over — ${view.verdict}`;
-    $("choiceHint").textContent = "Start a new game above.";
-    return;
-  }
-  if (!view.yourTurn) {
-    $("prompt").textContent = "Opponent is thinking…";
-    $("choiceHint").textContent = "";
-    return;
-  }
   if (replaying) {
     // The options exist, but they belong to a board the player has not seen
     // arrive yet. Hold them until the turn has finished playing out.
@@ -1073,6 +1063,16 @@ function renderChoice() {
     // waiting to watch is the one thing this must not do. The S key remains as
     // a deliberate way out.
     $("choiceHint").textContent = "watch their turn — press S to cut it short";
+    return;
+  }
+  if (view.finished) {
+    $("prompt").textContent = `Game over — ${view.verdict}`;
+    $("choiceHint").textContent = "Start a new game above.";
+    return;
+  }
+  if (!view.yourTurn) {
+    $("prompt").textContent = "Opponent is thinking…";
+    $("choiceHint").textContent = "";
     return;
   }
 
