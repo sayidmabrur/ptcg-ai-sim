@@ -638,6 +638,32 @@ function floatNumber(ev, ms = 1050) {
   setTimeout(() => tag.remove(), ms + 60);
 }
 
+/** Move the HP a card shows now, ahead of the snapshot that confirms it.
+ *
+ *  A decision is snapshotted whole, so the board only catches up once the whole
+ *  action has resolved — an attack's damage and the Knock Out it caused would
+ *  otherwise land in the same frame, with the HP never seen to fall. Applying
+ *  the number as it floats lets the bar drop on its own beat and the Pokémon
+ *  leave on the next one, the order the cards move in a real game. This is only
+ *  ever a preview: the snapshot that follows still has the last word.
+ */
+function nudgeHp(ev) {
+  const node = cardNode(ev);
+  if (!node) return;
+  const label = node.querySelector(".hp");
+  const bar = node.querySelector(".hpbar");
+  const fill = bar && bar.querySelector("i");
+  if (!label || !fill) return;
+  const [cur, max] = label.textContent.split("/").map((n) => parseInt(n, 10));
+  if (!Number.isFinite(cur) || !Number.isFinite(max) || !max) return;
+  const now = Math.min(max, Math.max(0, cur + ev.value));
+  const pct = (now / max) * 100;
+  label.textContent = `${now}/${max}`;
+  fill.style.width = `${pct}%`;
+  bar.classList.toggle("low", pct < 34);
+  bar.classList.toggle("hurt", pct >= 34 && pct < 67);
+}
+
 /** Where a zone lives on screen, so a card can be seen travelling to it. */
 function zoneAnchor(side, area, serial) {
   const half = side === "opp" ? $("oppActive").parentElement : $("meActive").parentElement;
@@ -759,6 +785,7 @@ function playEvent(ev, scale) {
     case "damage":
     case "heal":
       floatNumber(ev, ms);
+      nudgeHp(ev);
       return beat();
     case "attack":
       highlight(ev, "attacking", ms);
@@ -867,7 +894,7 @@ async function playEvents(events, steps = []) {
   replaying = true;
   replayingOpponent = list.some((ev) => ev.side === "opp");
   renderChoice();
-  let next = 1;   // steps[0] is already on screen: the board before the agent moved
+  let next = 1;   // steps[0] is already on screen: the board before this batch
   for (let i = 0; i < list.length; i++) {
     if (animating !== token) break;  // a newer view arrived, or the replay was skipped
     // Whose action it is shows on the banner; a batch usually contains the tail
@@ -949,10 +976,12 @@ function render() {
   view.events = [];   // consumed: a re-render must not replay the turn again
 
   if (events.length && steps.length) {
-    // Rewind the board to where it stood before the agent moved, and let the
-    // replay walk it forward. Drawing the final position first and narrating
-    // over it is what made the pop-ups describe moves the board had already
-    // made — the cards were all in their end-of-turn places from the first beat.
+    // Rewind the board to where it stood before anything in this batch
+    // happened — including the human's own action — and let the replay walk it
+    // forward. Drawing a later position first and narrating over it is what
+    // made the pop-ups describe moves the board had already made: the cards sat
+    // in their end-of-turn places from the first beat, and an attack showed its
+    // damage and its Knock Out before the attack was ever animated.
     drawBoard(steps[0], shownHand);
     renderChoice();
     renderLog(view.log);

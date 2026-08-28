@@ -222,15 +222,19 @@ class Battle:
             self._absorb()
             self._snapshot()
 
-    def _snapshot(self) -> None:
+    def _snapshot(self, delta: int | None = None) -> None:
         """Record the board, and how many log entries the step that made it wrote.
 
         The counts are turned into positions in the *human's* batch when the
         batch is delivered (``take_steps``): both seats see the same entries in
         the same order, redacted per seat, so a count is a position either way.
+
+        ``delta`` overrides that count. A step that no action produced — the
+        board as it stood before the human chose — wrote nothing, and passing 0
+        is what keeps it anchored at the start of the batch.
         """
         board = render.board_snapshot(self.obs, self.human_seat)
-        board["_delta"] = len(self.obs.get("logs") or [])
+        board["_delta"] = len(self.obs.get("logs") or []) if delta is None else delta
         self.pending_steps.append(board)
 
     def select(self, choice: list[int]) -> None:
@@ -247,6 +251,12 @@ class Battle:
             raise ValueError("duplicate selections")
         if any(not 0 <= i < len(select["option"]) for i in choice):
             raise ValueError("option index out of range")
+        # The board as it stands *before* the choice is applied. Without it the
+        # batch opens on the position the human's own action already reached —
+        # the browser draws that first, so an attack showed its damage and swept
+        # the Knocked Out Pokémon into the discard before the attack itself was
+        # ever animated. The events then narrate a board that has already moved.
+        self._snapshot(delta=0)
         self.obs = raw_select(list(choice))
         self.advance()
 
@@ -257,18 +267,24 @@ class Battle:
     def take_steps(self, batch_size: int) -> list[dict]:
         """The boards for this batch, each tagged with the log position it holds.
 
-        The first snapshot is the board *before* the agent moved, so what stands
-        in front of it is whatever the human's own action wrote; the rest each
-        account for one agent decision. Working the offsets out from the batch
-        size keeps the two counts anchored to the same starting point, which
-        counting forwards from the agent's observations does not — the agent's
-        first observation reaches back past the human's last view.
+        The first snapshot opens the batch and nothing in it has been narrated
+        yet: after a human decision that is the board from before the choice was
+        applied (``select`` records it with a zero delta), and at the start of a
+        match it is the opening position. Each later step accounts for one
+        decision. Working the offsets out from the batch size keeps the two
+        counts anchored to the same starting point, which counting forwards from
+        the agent's observations does not — the agent's first observation
+        reaches back past the human's last view.
         """
         steps, self.pending_steps = self.pending_steps, []
         agent_deltas = [step.pop("_delta") for step in steps][1:]
         position = max(0, batch_size - sum(agent_deltas))
         for i, step in enumerate(steps):
-            step["logsSoFar"] = position
+            # An agent turn holding entries the human may not see counts more
+            # steps than the redacted batch has room for. Pinning the overflow
+            # to the end of the batch lands those boards on the closing beat
+            # rather than past it, where the replay would never reach them.
+            step["logsSoFar"] = min(position, batch_size)
             if i < len(agent_deltas):
                 position += agent_deltas[i]
         return steps
