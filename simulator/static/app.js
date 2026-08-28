@@ -863,7 +863,6 @@ function mergeEvents(events) {
     if (last && last.kind === ev.kind && last.side === ev.side) {
       if (RUNS.has(ev.kind) && last.from === ev.from && last.to === ev.to) {
         last.count = (last.count || 1) + 1;
-        last.rawIndex = ev.rawIndex;   // the run reaches this far into the log
         if (last.name !== ev.name) {
           // A run of different cards: drop the identity, or four different
           // cards would all fly wearing the first one's face.
@@ -876,7 +875,6 @@ function mergeEvents(events) {
       // Pokémon are one hit, and should read as -30, not as -10 three times.
       if (SUMS.has(ev.kind) && last.serial === ev.serial) {
         last.value += ev.value;
-        last.rawIndex = ev.rawIndex;
         continue;
       }
     }
@@ -886,32 +884,40 @@ function mergeEvents(events) {
 }
 
 /** Run a view's events in order, narrating the progress in the status bar. */
+/** How long a finished move is left standing before the next one begins. */
+const HOLD = 700;
+const pause = (ms) => new Promise((done) => setTimeout(done, ms));
+
 async function playEvents(events, steps = []) {
   const token = {};
   animating = token;
   // No length-based compression: a turn with twelve actions in it takes twelve
   // beats to watch, which is the point. The speed control is how you shorten it.
   const scale = speedFactor();
-  const list = mergeEvents(events);
+  const total = mergeEvents(events).length;
   // Your options stay locked until the replay finishes. Before this, acting
   // immediately cancelled the rest of the opponent's turn — the very thing the
   // replay exists to show — and it was easy to do by accident.
   replaying = true;
-  replayingOpponent = list.some((ev) => ev.side === "opp");
+  replayingOpponent = events.some((ev) => ev.side === "opp");
   renderChoice();
-  let next = 1;   // steps[0] is already on screen: the board before this batch
-  for (let i = 0; i < list.length; i++) {
-    if (animating !== token) break;  // a newer view arrived, or the replay was skipped
-    // Whose action it is shows on the banner; a batch usually contains the tail
-    // of your own turn as well as the opponent's, so the counter stays neutral.
-    $("status").textContent = `replaying — ${i + 1}/${list.length} · press S to skip`;
-    await playEvent(list[i], scale);
-    // Move the board on to every position this action completed. The narration
-    // and the cards then change together, which is the whole point of it.
-    while (next < steps.length && steps[next].logsSoFar <= list[i].rawIndex + 1) {
-      drawBoard(steps[next], shownHand);
-      next += 1;
+  // A step is one move: the events it was made of, then the board it produced.
+  // Replaying it that way needs no alignment between narration and position —
+  // the engine paired them when it recorded the step.
+  let done = 0;
+  for (const step of steps) {
+    const beats = mergeEvents(step.events || []);
+    for (const ev of beats) {
+      if (animating !== token) break;
+      done += 1;
+      // Whose action it is shows on the banner; a batch usually contains the
+      // tail of your own turn as well as the opponent's, so this stays neutral.
+      $("status").textContent = `replaying — ${done}/${total} · press S to skip`;
+      await playEvent(ev, scale);
     }
+    if (animating !== token) break;
+    drawBoard(step.board, shownHand);          // what the move left behind
+    if (beats.length) await pause(Math.round(HOLD * scale));
   }
   if (animating === token) animating = null;
   if (!animating) {
@@ -987,7 +993,7 @@ function render() {
     // made the pop-ups describe moves the board had already made: the cards sat
     // in their end-of-turn places from the first beat, and an attack showed its
     // damage and its Knock Out before the attack was ever animated.
-    drawBoard(steps[0], shownHand);
+    drawBoard(steps[0].board, shownHand);
     renderChoice();
     renderLog(view.log);
     playEvents(events, steps);

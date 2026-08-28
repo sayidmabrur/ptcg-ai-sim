@@ -222,7 +222,6 @@ class Battle:
         self._agent_trail: list[dict] = []    # the agent's turn, in case the match ends inside it
         self._trail_open = False             # ...and whether it has started collecting
         self._delivered = 0                  # log entries handed to the browser since the agent moved
-        self._shown_before = 0               # ...of those, the ones before the current batch
         self.finished = False
         self.result = -1
         if hasattr(agent, "reset"):
@@ -274,14 +273,19 @@ class Battle:
     def advance(self) -> None:
         """Let the agent play until the human must choose (or the game ends).
 
-        A snapshot of the board is taken after every one of the agent's
-        decisions. Without them the browser only ever receives the position at
-        the *end* of the turn, so a narrated replay describes moves against a
-        board that has already made all of them — the pop-ups paced correctly
-        while the cards jumped to their final places at once.
+        One snapshot per decision, each carrying the number of log entries that
+        decision wrote. A step is then a whole move — *this* is the board, *this*
+        is what was done to reach it — which is what the browser replays, rather
+        than two independent streams it has to line up by counting.
         """
+        # What the browser already holds of the agent's first observation: that
+        # observation reaches back to the agent's previous decision, over
+        # everything delivered since.
+        shown = self._delivered
         self._absorb()
-        self._snapshot()
+        first = self.obs.get("logs") or []
+        # Whatever is left is what the human's own action just wrote.
+        self._snapshot(wrote=max(0, len(first) - shown))
         while not self.finished and self.acting_seat == self.agent_seat:
             select = self.obs["select"]
             if select is None:
@@ -289,25 +293,26 @@ class Battle:
             choice = self.agent.act(self.obs)
             self.obs = raw_select(list(choice))
             self._absorb()
-            self._snapshot()
-            # From here the agent's next observation starts fresh, so nothing
-            # delivered before it has to be subtracted again.
-            self._delivered = self._shown_before = 0
+            # The observation that follows a decision spans exactly what that
+            # decision wrote — unless the agent's turn is over, in which case it
+            # is the human's own view and spans the whole batch. That last one
+            # is what the remainder is for.
+            wrote = len(self.obs.get("logs") or []) if self.acting_seat == self.agent_seat else None
+            self._snapshot(wrote=wrote)
+            self._delivered = 0
 
-    def _snapshot(self, delta: int | None = None) -> None:
-        """Record the board, and how many log entries the step that made it wrote.
+    def _snapshot(self, wrote: int | None = None) -> None:
+        """Record the board, and how many log entries produced it.
 
-        The counts are turned into positions in the *human's* batch when the
-        batch is delivered (``take_steps``): both seats see the same entries in
-        the same order, redacted per seat, so a count is a position either way.
-
-        ``delta`` overrides that count. A step that no action produced — the
-        board as it stood before the human chose — wrote nothing, and passing 0
-        is what keeps it anchored at the start of the batch.
+        ``wrote`` is ``None`` when the count is not knowable from the engine —
+        the opening position, and the agent's final decision, whose following
+        observation belongs to the human and spans the whole batch. Those are
+        filled in at delivery from what is left over.
         """
-        board = render.board_snapshot(self.obs, self.human_seat)
-        board["_delta"] = len(self.obs.get("logs") or []) if delta is None else delta
-        self.pending_steps.append(board)
+        self.pending_steps.append({
+            "board": render.board_snapshot(self.obs, self.human_seat),
+            "_wrote": wrote,
+        })
 
     def select(self, choice: list[int]) -> None:
         """Apply the human's selection, then hand control back to the agent."""
@@ -328,54 +333,53 @@ class Battle:
         # the browser draws that first, so an attack showed its damage and swept
         # the Knocked Out Pokémon into the discard before the attack itself was
         # ever animated. The events then narrate a board that has already moved.
-        self._snapshot(delta=0)
+        self._snapshot(wrote=0)
         self.obs = raw_select(list(choice))
         self.advance()
 
     def take_logs(self) -> list[dict]:
         logs, self.pending_logs = self.pending_logs, []
-        # What the browser has been given since the agent last moved. The agent's
-        # next observation reaches back over all of it — a player often takes
-        # several decisions in a row — and subtracting it is what puts this
-        # batch's boards among its own events instead of past the last one.
-        self._shown_before = self._delivered
+        # What the browser has been given since the agent last moved: the
+        # agent's next observation reaches back over all of it, and ``advance``
+        # subtracts it to find what the human's own action wrote.
         self._delivered += len(logs)
         return logs
 
-    def take_steps(self, batch_size: int) -> list[dict]:
-        """The boards for this batch, each tagged with the log position it holds.
+    def take_steps(self, logs: list[dict]) -> list[dict]:
+        """This batch as a list of moves: each board with the events that made it.
 
-        The first snapshot opens the batch and nothing in it has been narrated
-        yet: after a human decision that is the board from before the choice was
-        applied (``select`` records it with a zero delta), and at the start of a
-        match it is the opening position. Each later step accounts for one
-        decision. Working the offsets out from the batch size keeps the two
-        counts anchored to the same starting point, which counting forwards from
-        the agent's observations does not — the agent's first observation
-        reaches back past the human's last view.
+        Every step owns its own slice of the log, cut by how many entries each
+        decision wrote, so the browser replays *board, what was done, next board*
+        instead of trying to line two independent streams up by position. The
+        slices come from the human's own batch, so nothing here has to decide
+        what may be shown — the engine already redacted it for this seat.
+
+        An unknown count (the opening board, and the agent's last decision,
+        whose following observation belongs to the human) takes what is left
+        over. If the counts do not add up — a game ending mid-turn hands over a
+        reconstructed batch — the remainder simply lands on the last step, which
+        is late but never out of order.
         """
         steps, self.pending_steps = self.pending_steps, []
-        deltas = [step.pop("_delta") for step in steps]
         if not steps:
             return steps
 
-        steps[0]["logsSoFar"] = 0
-        if len(steps) > 1:
-            # The observation the agent first acts on reaches back past the
-            # human's last view: its log holds everything that view already
-            # showed, *plus* whatever the human's own action wrote. Only the
-            # latter belongs to this batch. Counting it whole is what pushed
-            # every board past the last event, so none of them landed until the
-            # replay was over and the whole turn arrived at once.
-            steps[1]["logsSoFar"] = min(max(0, deltas[1] - self._shown_before), batch_size)
-        position = steps[1]["logsSoFar"] if len(steps) > 1 else 0
-        for i in range(2, len(steps)):
-            position += deltas[i]
-            steps[i]["logsSoFar"] = min(position, batch_size)
-        # The last snapshot came from the *next* observation, whose log spans the
-        # whole batch rather than the decision that produced this board. It is
-        # the final position either way, so it belongs at the end.
-        steps[-1]["logsSoFar"] = batch_size
+        counts = [step.pop("_wrote") for step in steps]
+        known = sum(n for n in counts if n is not None)
+        unknown = [i for i, n in enumerate(counts) if n is None]
+        # Share whatever the measured decisions did not account for among the
+        # steps whose own count the engine could not give us.
+        spare = max(0, len(logs) - known)
+        for i in unknown:
+            counts[i] = spare if i == unknown[-1] else 0
+
+        at = 0
+        for step, count in zip(steps, counts):
+            slice_ = logs[at:at + count]
+            at += count
+            step["events"] = render.log_events(slice_, self.human_seat)
+        if at < len(logs):                       # anything unaccounted for is still shown
+            steps[-1]["events"].extend(render.log_events(logs[at:], self.human_seat))
         return steps
 
     def close(self) -> None:

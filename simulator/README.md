@@ -249,6 +249,20 @@ hit by accident, and losing the turn you were waiting to watch is the one thing
 this must not do. The **S** key still cuts a replay short — a key is not
 something you press by mistake while watching.
 
+**A step is one move: the board, what was done to it, the board again.** The
+engine hands over a turn as one batch, but it makes it one decision at a time —
+so each decision is recorded with the log entries it wrote *and* the board it
+left behind, and the browser replays them in that shape:
+
+    board  →  the move, narrated  →  the board it produced  →  hold  →  next
+
+That pairing is the engine's own, which is why it needs no alignment. An earlier
+version sent a flat event list and separately-positioned boards and tried to
+line the two up by counting log entries; every miscount showed as a board that
+lagged the narration and then jumped — the whole turn arriving at once at the
+end. Slices come from the human's own batch, so nothing here decides what may be
+shown: the engine already redacted it for this seat.
+
 **The board moves with the narration, one action at a time.** This is the part
 that took three attempts to get right. The pop-ups were paced from the start,
 but the board was drawn from the *end-of-turn* position the moment the response

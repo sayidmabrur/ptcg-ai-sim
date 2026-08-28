@@ -548,7 +548,7 @@ def log_events(logs: list[dict], seat: int) -> list[dict]:
     here only if that seat was allowed to see it.
     """
     out = []
-    for raw_index, entry in enumerate(logs):
+    for entry in logs:
         kind = entry.get("type")
         side = "me" if entry.get("playerIndex") == seat else "opp"
         card_id = entry.get("cardId")
@@ -633,8 +633,6 @@ def log_events(logs: list[dict], seat: int) -> list[dict]:
                 "kind": "attach", "side": side, "serial": entry.get("serialAfter"),
                 "card": card, "name": (card or {}).get("name"),
             })
-        if out and "rawIndex" not in out[-1]:
-            out[-1]["rawIndex"] = raw_index
     return out
 
 

@@ -60,12 +60,12 @@ def _view() -> dict:
     fresh = _battle.take_logs()
     seat = _battle.human_seat
     _history.extend(render.log_lines(fresh, seat))
-    # The same events, in the shape the board animates them. Consumed once, with
-    # the log lines, so a page reload does not replay a turn that already ran.
-    events = render.log_events(fresh, seat)
-    # The board after each of the agent's decisions, so the replay can move the
-    # cards one action at a time instead of jumping to the end of the turn.
-    steps = _battle.take_steps(len(fresh))
+    # This batch as a list of moves: each board with the events that produced
+    # it. Consumed once, with the log lines, so a page reload does not replay a
+    # turn that already ran.
+    steps = _battle.take_steps(fresh)
+    # The flat event list the browser narrates, in step order.
+    events = [event for step in steps for event in step["events"]]
     obs = _battle.view_obs
     if obs is None:
         # The agent has the first decision and the human has not observed yet.
