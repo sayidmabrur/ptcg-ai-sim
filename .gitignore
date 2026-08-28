@@ -9,6 +9,7 @@
 !/.github/
 !/.github/workflows/
 !/.github/workflows/*.yml
+!/render.yaml
 
 # ---------------------------------------------------------------- inside simulator/
 # Card scans: 683 MB of artwork, tracked via Git LFS (see .gitattributes)
