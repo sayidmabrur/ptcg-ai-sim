@@ -781,7 +781,12 @@ def pad_options(per_decision_options: list[OptionsVocab]) -> dict[str, torch.Ten
     # ``special_condition_type`` is +1-shifted so 0 already means "unset",
     # which is exactly the right fill for a padded slot.
     zero_filled_fields = (
-        "area", "targets_opponent", "card_id", "special_condition_type",
+        # ``in_play_area`` was collected by ``from_options`` but never stacked, so it
+        # never reached the model — which meant an option naming a board Pokemon arrived
+        # carrying only ``in_play_index``, with no way to say whether that index counts
+        # into the bench or the active slot. It is needed to address a board token.
+        # 0 is the natural pad: ``AreaType`` starts at 1, so 0 already reads as "unset".
+        "area", "in_play_area", "targets_opponent", "card_id", "special_condition_type",
     )
 
     result = {"type": stack("type", 0), "options_mask": mask}

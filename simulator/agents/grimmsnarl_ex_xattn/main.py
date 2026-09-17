@@ -96,15 +96,30 @@ def _build_actor_critic():
     inference but present in the checkpoint), and the ``stop`` logit that the
     decode below depends on.
     """
+    import json
     import torch.nn as nn
 
     _policy_module = _load_policy_module()
-    D, PolicyNetwork = _policy_module.D, _policy_module.PolicyNetwork
+    PolicyNetwork = _policy_module.PolicyNetwork
+
+    # A state_dict records no width, depth or feature flags, so building
+    # ``PolicyNetwork()`` from module defaults silently assumes the 2.68M-parameter
+    # generation. Width and depth at least fail loudly on a shape mismatch; a flag like
+    # ``board_tokens`` or ``type_conditioned`` does not, because it only *adds* modules —
+    # a strict load would report them missing, and this one would happily serve the
+    # checkpoint with its board addressing and type-conditioned head absent. So the arch
+    # is read from the checkpoint's own sidecar, exactly as ``eval_checkpoint.arch_for``
+    # and the packaged bundle do. No sidecar = the defaults, as before.
+    ARCH = {}
+    meta = Path(_resolve("actor_critic.pt") + ".meta.json")
+    if meta.exists():
+        ARCH = json.loads(meta.read_text()).get("arch") or {}
+    D = ARCH.get("dim", _policy_module.D)
 
     class ActorCritic(nn.Module):
         def __init__(self):
             super().__init__()
-            self.policy = PolicyNetwork()
+            self.policy = PolicyNetwork(**ARCH)
             self.value = nn.Sequential(nn.Linear(D, D), nn.ReLU(), nn.Linear(D, 1))
             self.stop = nn.Linear(D, 1)
 
@@ -120,6 +135,15 @@ def _build_actor_critic():
             # options can cross-attend over the chain prefix, while the
             # ``*_frozen`` generations mean-pool to one tensor and have no
             # ``option_cross``. Whichever module was bundled, this handles it.
+            #
+            # Current generations expose the whole pass as ``logits_and_state``, which is
+            # the only copy of it — see that method for why re-deriving it here was a
+            # train/serve bug rather than duplication. The hand-written path below is
+            # kept solely for the ``*_frozen`` bundles, whose modules predate it.
+            if hasattr(policy, "logits_and_state"):
+                logits, state, options_mask = policy.logits_and_state(features)
+                return logits, self.stop(state).squeeze(-1), options_mask
+
             chain = policy.decision_chain(features["decision_chain"])
             chain_state, chain_steps, chain_mask = (
                 chain if isinstance(chain, tuple) else (chain, None, None)

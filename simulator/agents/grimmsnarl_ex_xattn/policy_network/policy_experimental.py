@@ -34,6 +34,7 @@ from vocab import (
     SKILL_FLAG_COUNT,
     SPECIAL_CONDITION_VOCAB_SIZE,
     TARGETS_OPPONENT_VOCAB_SIZE,
+    AreaType,
     EnergyType,
 )
 
@@ -96,6 +97,14 @@ def _masked_mean_sum(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 #: ``opponent_history_size``); 64 leaves slack so a longer spec doesn't index
 #: out of range.
 MAX_SEQ_LEN = 64
+
+#: Addresses for the board-token lookup: own slots 0..(SIDE_STRIDE-1), opponent slots
+#: SIDE_STRIDE.., and one final id meaning "this option names no Pokemon". A bench holds
+#: at most 8 even with every bench-expanding effect in play, so 9 slots a side (active +
+#: 8) is slack, not a limit.
+SIDE_STRIDE = 9
+NO_SLOT = 2 * SIDE_STRIDE
+BOARD_SLOT_VOCAB = NO_SLOT + 1
 
 
 class ReversePositionalEmbedding(nn.Module):
@@ -561,7 +570,8 @@ class OptionCrossAttention(nn.Module):
                 if projection.bias is not None:
                     nn.init.zeros_(projection.bias)
 
-    def forward(self, option_vecs, options_mask, state, chain_steps, chain_mask):
+    def forward(self, option_vecs, options_mask, state, chain_steps, chain_mask,
+                memory_extra=None, memory_extra_mask=None):
         memory = torch.cat([(state + self.state_marker).unsqueeze(1), chain_steps], dim=1)
         # The state token's own "not padding" column is built from the batch
         # size rather than by slicing ``chain_mask``: at the very first
@@ -572,6 +582,12 @@ class OptionCrossAttention(nn.Module):
             chain_mask.shape[0], 1, dtype=torch.bool, device=chain_mask.device
         )
         memory_padding = torch.cat([state_is_real, ~chain_mask], dim=1)
+        if memory_extra is not None:
+            # Board slots join the same memory sequence, so an option can attend to the
+            # Pokemon it names instead of only to a pooled board summary. An empty slot
+            # is padding: attending to it would be attending to a zero vector.
+            memory = torch.cat([memory, memory_extra], dim=1)
+            memory_padding = torch.cat([memory_padding, ~memory_extra_mask], dim=1)
         return self.decoder(
             option_vecs,
             memory,
@@ -685,6 +701,31 @@ class PlayerStateEncoder(nn.Module):
     def _pool_cards(self, module, fields: dict, prefix: str) -> torch.Tensor:
         vecs = module(_card_fields(fields, prefix))  # (B, max_width, D)
         return _masked_mean_sum(vecs, fields[f"{prefix}_mask"])
+
+    def pokemon_tokens(self, player_state: dict):
+        """``(tokens (B, 1 + max_bench, D), mask (B, 1 + max_bench))`` — one vector per
+        board slot, *before* the pooling in ``forward``.
+
+        ``forward`` mean+sum pools the bench because a board is a set, which is right for
+        summarising it. It is wrong for *targeting*: an option that names a slot carries
+        only ``in_play_index``, so once the per-slot vectors are pooled nothing downstream
+        can answer "how much energy is already on the Pokemon this option points at". That
+        is measurable — the clone stacks a second energy onto an already-energised
+        Munkidori on 11.2% of such decisions against the pilots' 1.5%, because the
+        distinction is absent from its input, not because the corpus taught it.
+
+        Slot 0 is the active Pokemon, slots 1.. are the bench in ``in_play_index`` order,
+        which is exactly the addressing options use. No new parameters: this reuses the
+        same ``PokemonEncoder`` the pooled path already runs.
+        """
+        active = (
+            self.pokemon(player_state["active_pokemon"])
+            * player_state["active_pokemon"]["present"].unsqueeze(-1)
+        ).unsqueeze(1)  # (B, 1, D)
+        bench = self.pokemon(player_state["bench_pokemon"])  # (B, max_bench, D)
+        active_mask = player_state["active_pokemon"]["present"].bool().unsqueeze(1)
+        bench_mask = player_state["bench_pokemon"]["bench_pokemon_mask"].bool()
+        return torch.cat([active, bench], dim=1), torch.cat([active_mask, bench_mask], dim=1)
 
     def forward(self, player_state: dict) -> torch.Tensor:
         active = (
@@ -1038,7 +1079,8 @@ class PolicyNetwork(nn.Module):
     """
 
     def __init__(self, dim=D, dropout=DEFAULT_DROPOUT, nhead=2, chain_layers=8,
-                 hist_layers=8, ctx_layers=2, cross_layers=2, ff_mult=2):
+                 hist_layers=8, ctx_layers=2, cross_layers=2, ff_mult=2,
+                 board_tokens=False, type_conditioned=False):
         """Capacity is plumbed rather than hardcoded, so a run can be reproduced from
         its saved args. Every default reproduces the 2.68M-parameter network exactly.
 
@@ -1053,7 +1095,8 @@ class PolicyNetwork(nn.Module):
         self.arch = {"dim": dim, "nhead": nhead, "chain_layers": chain_layers,
                      "hist_layers": hist_layers, "ctx_layers": ctx_layers,
                      "cross_layers": cross_layers, "ff_mult": ff_mult,
-                     "dropout": dropout}
+                     "dropout": dropout, "board_tokens": board_tokens,
+                     "type_conditioned": type_conditioned}
         if dim % nhead:
             raise ValueError(f"dim {dim} must be divisible by nhead {nhead}")
         self.decision_chain = DecisionChainEncoder(
@@ -1070,8 +1113,154 @@ class PolicyNetwork(nn.Module):
         self.option_cross = OptionCrossAttention(
             dim, nhead=nhead, layers=cross_layers, dropout=dropout, ff_mult=ff_mult)
         self.score = nn.Sequential(nn.Linear(2 * dim, dim), nn.ReLU(), nn.Linear(dim, 1))
+        self.type_conditioned = type_conditioned
+        if type_conditioned:
+            # (a) A free logit level per OptionType. One shared ``score`` MLP has to rank
+            # every category on one scale — an ATTACH against a PLAY against END — and
+            # the only thing that could express "how attractive is ending the turn at
+            # all" was an emergent property of that MLP, competing for the same weights
+            # that pick *which* attach. This is that quantity, held explicitly: 17
+            # numbers, one per category, added to the logit.
+            #
+            # Zero-init, so an untrained bias is an exact no-op and a warm start
+            # reproduces the checkpoint it came from bit-for-bit.
+            self.type_bias = nn.Embedding(OPTION_TYPE_VOCAB_SIZE, 1)
+            nn.init.zeros_(self.type_bias.weight)
+            # (b) FiLM the scoring query on what kind of decision this is. ``select_type``
+            # and ``select_context`` reach the scorer today only through
+            # ``SelectionEncoder`` -> ``ctx_pooled`` -> ``fuse``, i.e. as one of seven
+            # concatenated blocks diluted into a single state vector. But a MAIN menu and
+            # a "discard exactly two" prompt are not the same ranking problem, and the
+            # scorer is one function serving both. A multiplicative gate lets the
+            # decision kind reshape the query rather than merely shift it.
+            self.select_type_embed = nn.Embedding(SELECT_TYPE_VOCAB_SIZE, dim // 4)
+            self.select_context_embed = nn.Embedding(SELECT_CONTEXT_VOCAB_SIZE, dim // 4)
+            film = nn.Linear(2 * (dim // 4), 2 * dim)
+            # Zero-init again: gamma == 0 -> scale (1 + gamma) == 1 and beta == 0, so the
+            # gate starts as the identity and the same warm-start guarantee holds.
+            nn.init.zeros_(film.weight)
+            nn.init.zeros_(film.bias)
+            self.select_film = film
+        self.board_tokens = board_tokens
+        if board_tokens:
+            # A learned address, shared by the two sides of the lookup: the same table
+            # tags each board token with the slot it occupies AND tags each option with
+            # the slot it names. Matching addresses is what lets cross-attention route an
+            # option to the Pokemon it targets rather than to a pooled average.
+            self.slot_embed = nn.Embedding(BOARD_SLOT_VOCAB, dim)
+
+    @staticmethod
+    def _named_slot(options: dict) -> torch.Tensor:
+        """``(B, N)`` board address each option names, or ``NO_SLOT`` for none.
+
+        An option names a Pokemon through **either** of two pointer pairs, and which one
+        it uses is decided by the option type, not by anything the model can infer:
+
+        ``in_play_area``/``in_play_index`` — the Pokemon an ATTACH lands on or an EVOLVE
+        evolves. Always the deciding player's own board (the engine leaves
+        ``playerIndex`` unset on these, so ``targets_opponent`` reads as "unknown").
+
+        ``area``/``index`` — the Pokemon a CARD, ABILITY, ENERGY, ENERGY_CARD or
+        TOOL_CARD option acts on, whenever that ``area`` is ACTIVE or BENCH. Here the
+        side is real and load-bearing: measured over 29,021 corpus decisions, CARD
+        options name the *opponent's* board on 14,366 of 26,538 such slots (54%) — a
+        gust target, an attack target, a damage-counter placement.
+
+        Only the first pair was read before, which addressed ATTACH and EVOLVE (35,740
+        option slots) and left every Pokemon-naming option of the second kind on
+        ``NO_SLOT`` — 31,830 slots, 47% of all Pokemon-naming options, and concentrated
+        in CARD, which is 45.4% of everything the expert picks. Those options were
+        therefore aliased onto one shared "names nothing" address, exactly the blindness
+        ``board_tokens`` was added to remove, for nearly half the cases.
+
+        ``in_play_*`` wins where both are set, since that pair is the *target* of the
+        play while ``area``/``index`` is then the source card being moved. No option type
+        in the corpus sets ``in_play_area`` to a board area and also names a Pokemon
+        through ``area``, so the precedence is a guard, not a live choice.
+        """
+        def board_pointer(area: torch.Tensor, index: torch.Tensor) -> tuple:
+            on_board = (area == AreaType.ACTIVE) | (area == AreaType.BENCH)
+            # A bench pointer needs a real index; the active slot is addressed by area
+            # alone (its index is always 0 in the corpus, but NO_VALUE would be legal).
+            valid = on_board & ((area != AreaType.BENCH) | (index >= 0))
+            within = torch.where(area == AreaType.BENCH, index.clamp(min=0) + 1,
+                                 torch.zeros_like(index))
+            return valid, within
+
+        in_play_valid, in_play_within = board_pointer(
+            options["in_play_area"].squeeze(1), options["in_play_index"].squeeze(1)
+        )
+        area_valid, area_within = board_pointer(
+            options["area"].squeeze(1), options["index"].squeeze(1)
+        )
+        opponent = options["targets_opponent"].squeeze(1)
+
+        # ``targets_opponent`` is 0/1/2 with 2 = "the engine did not say", which happens
+        # exactly on the ``in_play_*`` options — all of which are own-board. So "== 1"
+        # is the right test on both branches: unknown falls to the own side.
+        side = (opponent == 1).long() * SIDE_STRIDE
+        no_slot = torch.full_like(area_within, NO_SLOT)
+        slot = torch.where(area_valid, (area_within + side).clamp(max=NO_SLOT - 1), no_slot)
+        # in_play_* takes precedence, and is own-board regardless of ``side``.
+        slot = torch.where(in_play_valid, in_play_within.clamp(max=SIDE_STRIDE - 1), slot)
+        return slot
+
+    def _address_board(self, features: dict, option_vecs: torch.Tensor):
+        """Tag options and board slots with a shared address, and return the slots.
+
+        Matching addresses is what lets cross-attention route an option to the Pokemon
+        it targets rather than to a pooled average; ``_named_slot`` is the option side of
+        that address, and options naming no Pokemon get ``NO_SLOT`` so they are not
+        silently aliased onto the active slot.
+        """
+        options = features["decision_context"]["options"]
+        option_vecs = option_vecs + self.slot_embed(self._named_slot(options))
+
+        own, own_mask = self.player_state.pokemon_tokens(features["state"])
+        opp, opp_mask = self.player_state.pokemon_tokens(features["opponent_state"])
+
+        def addressed(tokens: torch.Tensor, offset: int) -> torch.Tensor:
+            # Per tensor, not shared: the two boards are padded to their own bench
+            # widths within a batch and are frequently different sizes.
+            slots = torch.arange(tokens.shape[1], device=tokens.device)
+            slots = slots.clamp(max=SIDE_STRIDE - 1) + offset
+            return tokens + self.slot_embed(slots).unsqueeze(0)
+
+        own, opp = addressed(own, 0), addressed(opp, SIDE_STRIDE)
+        return option_vecs, torch.cat([own, opp], dim=1), torch.cat([own_mask, opp_mask], dim=1)
 
     def forward(self, features: dict):
+        return self.logits_and_state(features)[0]
+
+    def logits_and_state(self, features: dict):
+        """``(logits, state, options_mask)`` — the whole forward pass, plus the fused
+        state vector it went through, with masked options at ``-inf``.
+
+        The pass is split into ``encode`` and ``score_options`` rather than written out
+        once here, because three other places need to reach into the middle of it: the
+        serving bundles wrap this network in an ``ActorCritic`` whose ``value``/``stop``
+        heads read the fused state, and PPO's copy needs the logits left *finite* on
+        masked positions. All three used to re-derive the pass by hand instead.
+
+        Two implementations of one forward is not a style problem here, it is a
+        train/serve mismatch waiting to happen, and it had already happened — every
+        hand-written copy predates ``_address_board``, so a ``board_tokens`` checkpoint
+        was *served with its board addressing silently disabled*, scoring options against
+        a mean-pooled bench exactly as if the flag had been off. Nothing errors; the
+        weights load and the agent plays slightly worse than the one that was measured.
+        Adding the type-conditioned head would have broken the same way.
+
+        So the pass lives here once, in the two methods below, and every caller composes
+        them. Anything a head outside this class needs must come out of them, not be
+        recomputed.
+        """
+        state, option_vecs, options_mask = self.encode(features)
+        logits = self.score_options(option_vecs, state, features)
+        return logits.masked_fill(~options_mask, float("-inf")), state, options_mask
+
+    def encode(self, features: dict):
+        """``(state (B, D), option_vecs (B, N, D), options_mask (B, N))`` — everything up
+        to the scoring head, including the board addressing and cross-attention."""
         ctx_pooled, option_vecs, options_mask = self.decision_context(features["decision_context"])
         # The chain is encoded before the fuse (not inside the cat) because its
         # per-step states are needed again *after* it, as cross-attention
@@ -1097,16 +1286,47 @@ class PolicyNetwork(nn.Module):
                 dim=-1,
             )
         )
+        if self.board_tokens:
+            option_vecs, memory_extra, memory_extra_mask = self._address_board(
+                features, option_vecs
+            )
+        else:
+            memory_extra = memory_extra_mask = None
         option_vecs = self.option_cross(
-            option_vecs, options_mask, state, chain_steps, chain_mask
+            option_vecs, options_mask, state, chain_steps, chain_mask,
+            memory_extra, memory_extra_mask,
         )
+        return state, option_vecs, options_mask
+
+    def score_options(self, option_vecs, state, features: dict):
+        """``(B, N)`` logits, **unmasked** — the scoring head on its own.
+
+        Left unmasked because PPO's sequential decode masks per step and needs these
+        finite (an ``-inf`` here poisons the autograd graph the moment a row has a step
+        with everything masked out). ``logits_and_state`` applies the mask for every
+        other caller.
+        """
         # The concatenated query is kept on top of the cross-attention: pre-LN
         # blocks are residual, so an untrained ``option_cross`` starts as
         # near-identity and this remains exactly the old scoring path at
         # init — the cross-attention adds to it rather than replacing it.
         query = state.unsqueeze(1).expand(-1, option_vecs.size(1), -1)  # (B, max_options, D)
+        if self.type_conditioned:
+            selection = features["decision_context"]["selection"]
+            kind = torch.cat(
+                [
+                    self.select_type_embed(selection["type"].squeeze(1)),
+                    self.select_context_embed(selection["context"].squeeze(1)),
+                ],
+                dim=-1,
+            )  # (B, 2 * (D // 4))
+            gamma, beta = self.select_film(kind).chunk(2, dim=-1)  # (B, D) each
+            query = query * (1.0 + gamma.unsqueeze(1)) + beta.unsqueeze(1)
         logits = self.score(torch.cat([option_vecs, query], dim=-1)).squeeze(-1)  # (B, max_options)
-        logits = logits.masked_fill(~options_mask, float("-inf"))
+        if self.type_conditioned:
+            logits = logits + self.type_bias(
+                features["decision_context"]["options"]["type"].squeeze(1)
+            ).squeeze(-1)
         return logits
 
 

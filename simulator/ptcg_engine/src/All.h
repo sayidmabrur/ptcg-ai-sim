@@ -8,6 +8,7 @@
 
 #include "BattleData.h"
 #include "CardImpl.h"
+#include "CardImplExtra.h"
 #include "InitializeCard.h"
 #include "Api.h"
 
@@ -17,5 +18,6 @@ inline void InitializeAll() {
   InitializeBattleFunction();
 
   CardImpl();
+  CardImplExtra();
 	InitializeCard();
 }
