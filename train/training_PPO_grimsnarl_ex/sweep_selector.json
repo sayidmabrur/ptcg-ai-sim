@@ -1,0 +1,49 @@
+{
+  "baseline": {
+    "simulations": 128,
+    "particles": 4,
+    "max_depth": 30,
+    "c_puct": 1.5,
+    "selector": "puct",
+    "blend": 0.0,
+    "setup_policy": "frozen:crustle",
+    "prior": "heuristic",
+    "root_prior": "",
+    "value_net": "value_mt.pt"
+  },
+  "games_per_opponent": 100,
+  "axes": {
+    "selector": [
+      {
+        "value": "puct",
+        "per_opponent": {
+          "crustle": 0.21,
+          "alakazam": 0.15,
+          "lucario": 0.33
+        },
+        "win_rate": 0.23,
+        "ci95": [
+          0.18597107673744184,
+          0.28085637546133546
+        ],
+        "wins": 69,
+        "played": 300
+      },
+      {
+        "value": "regret",
+        "per_opponent": {
+          "crustle": 0.19,
+          "alakazam": 0.14,
+          "lucario": 0.28
+        },
+        "win_rate": 0.20333333333333334,
+        "ci95": [
+          0.16167315823454487,
+          0.25249527689744494
+        ],
+        "wins": 61,
+        "played": 300
+      }
+    ]
+  }
+}

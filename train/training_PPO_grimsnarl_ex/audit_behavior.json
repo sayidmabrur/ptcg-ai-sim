@@ -1,0 +1,40 @@
+{
+  "optional": 127,
+  "empty_optional": 20,
+  "empty_by_effect": {
+    "None": 11,
+    "Hilda": 7,
+    "Pok\u00e9gear 3.0": 2
+  },
+  "active_turns": 879,
+  "attach_by_card": {
+    "Spiky Energy -> Dwebble": 5,
+    "Mist Energy -> Dwebble": 15,
+    "Mist Energy -> Crustle": 9,
+    "Hero\u2019s Cape -> Crustle": 4,
+    "Grow Grass Energy -> Crustle": 11,
+    "Mist Energy -> Mega Kangaskhan ex": 10,
+    "Spiky Energy -> Mega Kangaskhan ex": 7,
+    "Mist Energy -> Latias ex": 7,
+    "Rock Fighting Energy -> Dwebble": 1,
+    "Spiky Energy -> Latias ex": 5,
+    "Grow Grass Energy -> Cornerstone Mask Ogerpon ex": 2,
+    "Rock Fighting Energy -> Cornerstone Mask Ogerpon ex": 1,
+    "Grow Grass Energy -> Mega Kangaskhan ex": 6,
+    "Grow Grass Energy -> Dwebble": 7,
+    "Hero\u2019s Cape -> Mega Kangaskhan ex": 1,
+    "Rock Fighting Energy -> Mega Kangaskhan ex": 1,
+    "Hero\u2019s Cape -> Cornerstone Mask Ogerpon ex": 2,
+    "Mist Energy -> Cornerstone Mask Ogerpon ex": 3,
+    "Spiky Energy -> Crustle": 11,
+    "Rock Fighting Energy -> Crustle": 4,
+    "Rock Fighting Energy -> Latias ex": 2,
+    "Hero\u2019s Cape -> Dwebble": 2,
+    "Grow Grass Energy -> Latias ex": 2,
+    "Hero\u2019s Cape -> Latias ex": 1
+  },
+  "retreats": 17,
+  "retreats_with_latias": 15,
+  "ogerpon_active_turns": 21,
+  "errors": 0
+}

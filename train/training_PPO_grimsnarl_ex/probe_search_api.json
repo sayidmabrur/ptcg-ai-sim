@@ -1,0 +1,114 @@
+{
+  "p1": {
+    "ok": true,
+    "search_id": 19,
+    "ms_p50": 0.27129050431540236,
+    "ms_p95": 1.5114669949980453,
+    "same_turn": true,
+    "same_option_count": true,
+    "sbi_blob_bytes": 778
+  },
+  "p2": {
+    "ok": true,
+    "steps": 106,
+    "depth_reached": 106,
+    "engine_ms_p50": 0.027947004127781838,
+    "json_ms_p50": 0.05350999708753079,
+    "total_ms_p50": 0.08327551040565595,
+    "total_ms_p95": 0.1383479975629598,
+    "json_share": 0.6273799827757349,
+    "steps_per_second": 12008.332283149615
+  },
+  "p3": {
+    "root_id": 233,
+    "child_a": 234,
+    "root_reusable": true,
+    "child_b": 235,
+    "children_distinct": true,
+    "child_reusable": true,
+    "release_invalidates": true
+  },
+  "p4": {
+    "superset_accepted": true,
+    "undersized_accepted": false,
+    "undersized_error": "ValueError: opponent_deck does not match the number of cards in opponent's deck.",
+    "bogus_card_id_accepted": false,
+    "bogus_card_id_error": "ValueError: Invalid Card ID."
+  },
+  "p5": {
+    "ok": true,
+    "coin_choice_with_manual": false,
+    "coin_choice_by_default": false
+  },
+  "p6": {
+    "trials": 8,
+    "mean_steps": 134.625,
+    "mean_seconds": 0.030771999874559697,
+    "reached_terminal": 8,
+    "results": [
+      1,
+      1,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0
+    ],
+    "playouts_per_second": 32.497075395698786
+  },
+  "p7": {
+    "nodes_retained": 2001,
+    "rss_before_kb": 74044,
+    "rss_held_kb": 133928,
+    "kb_per_node": 29.92703648175912,
+    "rss_after_release_kb": 133944,
+    "rss_after_end_kb": 133976,
+    "release_reclaims": false,
+    "end_reclaims": false
+  },
+  "p8": {
+    "ok": true,
+    "drawn_card_id": 1225,
+    "predicted_first": 1182,
+    "predicted_last": 1225,
+    "matches_first": false,
+    "matches_last": true,
+    "in_prediction": true
+  },
+  "p9": {
+    "ok": true,
+    "impossible_belief_accepted": true,
+    "note": "engine does not validate; the particle sampler must",
+    "claimed_card_id": 1227,
+    "copies_claimed": 4
+  },
+  "p10": {
+    "ok": true,
+    "live_step_after_search": true,
+    "turn_advanced_or_held": true,
+    "result": -1
+  },
+  "p11": {
+    "rounds": 12,
+    "nodes_per_round": 400,
+    "rss_kb_samples": [
+      134904,
+      135452,
+      135504,
+      135568,
+      135568,
+      135572,
+      135644,
+      135680,
+      135688,
+      135708,
+      135824,
+      135824
+    ],
+    "rss_kb_first": 134904,
+    "rss_kb_last": 135824,
+    "growth_kb_per_round_late": 30.0,
+    "plateaued": true
+  }
+}

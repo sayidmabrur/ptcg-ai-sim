@@ -1,0 +1,153 @@
+[bc] 841,016 archetype frames over 8,436 episodes (1s to index)
+[bc] train 799,323 frames / 8,015 games,  val 41,693 frames / 421 games
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/capon/.netrc.
+wandb: Currently logged in as: sayid-10121012 (sayid-10121012-universitas-komputer-indonesia) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run 0cjyy4y3
+wandb: Tracking run with wandb version 0.28.1
+wandb: Run data is saved locally in /home/capon/projects/kaggle/pokemon--tcg-v2/training_PPO_grimsnarl_ex/wandb/run-20260811_090831-0cjyy4y3
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run bc-grimsnarl-ex
+wandb: ⭐️ View project at https://wandb.ai/sayid-10121012-universitas-komputer-indonesia/pokemon-tcg-rl
+wandb: 🚀 View run at https://wandb.ai/sayid-10121012-universitas-komputer-indonesia/pokemon-tcg-rl/runs/0cjyy4y3
+[wandb] https://wandb.ai/sayid-10121012-universitas-komputer-indonesia/pokemon-tcg-rl/runs/0cjyy4y3
+[bc] 2,681,153 parameters on cuda
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374796_404754515_476> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374799_4270930237_470> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374792_439959213_484> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374794_1477510492_480> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374791_2755006601_486> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374800_1573447081_468> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374793_3291204884_482> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374797_3021940756_474> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374795_4071119234_478> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374798_4214364343_472> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374799_3987830865_706> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374792_1157627751_727> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374796_1010527283_715> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374794_306735465_721> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+RuntimeError: unable to open shared memory object </torch_374793_239280442_724> in read-write mode: Too many open files (24)
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374795_69415406_718> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374800_2994492900_703> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374791_2684103399_730> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374797_2196371029_712> in read-write mode: Too many open files (24)
+Traceback (most recent call last):
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/queues.py", line 264, in _feed
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/multiprocessing/reduction.py", line 51, in dumps
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/multiprocessing/reductions.py", line 613, in reduce_storage
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 449, in wrapper
+  File "/home/capon/miniconda3/envs/kaggle-pokemon/lib/python3.12/site-packages/torch/storage.py", line 527, in _share_fd_cpu_
+RuntimeError: unable to open shared memory object </torch_374798_426061350_709> in read-write mode: Too many open files (24)

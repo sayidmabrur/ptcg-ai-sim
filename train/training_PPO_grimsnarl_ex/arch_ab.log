@@ -1,0 +1,10 @@
+===== submission_bc_grimsnarl
+  bundle:submission_bc_grimsnarl vs frozen:crustle: 46.3% [40.8%, 52.0%] (139/300, 0 abandoned) seat0 47.3% seat1 45.3% | 1.2 games/s
+  bundle:submission_bc_grimsnarl vs frozen:alakazam: 63.7% [58.1%, 68.9%] (191/300, 0 abandoned) seat0 64.7% seat1 62.7% | 1.0 games/s
+  bundle:submission_bc_grimsnarl vs frozen:lucario: 68.7% [63.2%, 73.7%] (206/300, 0 abandoned) seat0 69.3% seat1 68.0% | 1.1 games/s
+  OVERALL 59.6% [56.3%, 62.7%] (536/900)
+===== submission_bc_xattn
+  bundle:submission_bc_xattn vs frozen:crustle: 45.7% [40.1%, 51.3%] (137/300, 0 abandoned) seat0 50.0% seat1 41.3% | 1.1 games/s
+  bundle:submission_bc_xattn vs frozen:alakazam: 69.0% [63.6%, 74.0%] (207/300, 0 abandoned) seat0 70.0% seat1 68.0% | 1.0 games/s
+  bundle:submission_bc_xattn vs frozen:lucario: 65.0% [59.4%, 70.2%] (195/300, 0 abandoned) seat0 67.3% seat1 62.7% | 1.0 games/s
+  OVERALL 59.9% [56.7%, 63.0%] (539/900)

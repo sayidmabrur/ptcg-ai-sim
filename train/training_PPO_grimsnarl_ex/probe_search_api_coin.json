@@ -1,0 +1,151 @@
+{
+  "p1": {
+    "ok": true,
+    "search_id": 19,
+    "ms_p50": 0.4204185024718754,
+    "ms_p95": 0.9385340090375394,
+    "same_turn": true,
+    "same_option_count": true,
+    "sbi_blob_bytes": 532
+  },
+  "p2": {
+    "ok": true,
+    "steps": 141,
+    "depth_reached": 141,
+    "engine_ms_p50": 0.05131600482854992,
+    "json_ms_p50": 0.0770030019339174,
+    "total_ms_p50": 0.1332079991698265,
+    "total_ms_p95": 0.32416399335488677,
+    "json_share": 0.5981369103473013,
+    "steps_per_second": 7507.056680020415
+  },
+  "p3": {
+    "ok": false,
+    "reason": "root decision has no two single-option branches"
+  },
+  "p4": {
+    "superset_accepted": true,
+    "undersized_accepted": false,
+    "undersized_error": "ValueError: opponent_deck does not match the number of cards in opponent's deck.",
+    "bogus_card_id_accepted": false,
+    "bogus_card_id_error": "ValueError: Invalid Card ID."
+  },
+  "p5": {
+    "ok": true,
+    "coin_choice_with_manual": true,
+    "coin_choice_by_default": false
+  },
+  "p6": {
+    "trials": 8,
+    "mean_steps": 131.5,
+    "mean_seconds": 0.04346349762636237,
+    "reached_terminal": 8,
+    "results": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "playouts_per_second": 23.007812408393466
+  },
+  "p7": {
+    "nodes_retained": 2001,
+    "rss_before_kb": 72716,
+    "rss_held_kb": 137720,
+    "kb_per_node": 32.48575712143928,
+    "rss_after_release_kb": 137756,
+    "rss_after_end_kb": 137768,
+    "release_reclaims": false,
+    "end_reclaims": false
+  },
+  "p8": {
+    "ok": true,
+    "drawn_card_id": 6,
+    "predicted_first": 333,
+    "predicted_last": 6,
+    "matches_first": false,
+    "matches_last": true,
+    "in_prediction": true
+  },
+  "p9": {
+    "ok": false,
+    "reason": "opponent discard empty; nothing provably impossible yet"
+  },
+  "p10": {
+    "ok": true,
+    "live_step_after_search": true,
+    "turn_advanced_or_held": true,
+    "result": -1
+  },
+  "p11": {
+    "rounds": 12,
+    "nodes_per_round": 400,
+    "rss_kb_samples": [
+      140120,
+      140584,
+      140888,
+      140888,
+      140940,
+      141168,
+      141196,
+      141216,
+      141232,
+      141304,
+      141356,
+      141404
+    ],
+    "rss_kb_first": 140120,
+    "rss_kb_last": 141404,
+    "growth_kb_per_round_late": 34.666666666666664,
+    "plateaued": true
+  },
+  "p12": {
+    "manual_coin_true": {
+      "coin_logs": 53,
+      "heads_fraction": 0.39622641509433965,
+      "attacks_seen": 53,
+      "coin_head_selections": 27,
+      "control": {
+        "ok": true,
+        "choosing_yes_gives_head": true,
+        "choosing_no_gives_head": false,
+        "choice_determines_face": true
+      }
+    },
+    "manual_coin_false": {
+      "coin_logs": 150,
+      "heads_fraction": 0.5133333333333333,
+      "attacks_seen": 114,
+      "coin_head_selections": 0,
+      "control": null
+    }
+  },
+  "p13": {
+    "engine_flips": {
+      "manual_coin": false,
+      "frames_tested": 60,
+      "identical_after_respam": 49,
+      "deterministic_fraction": 0.8166666666666667,
+      "coin_frames": 43,
+      "coin_frames_identical": 32,
+      "draw_frames": 47,
+      "draw_frames_identical": 38,
+      "same_belief_replays_identically": false
+    },
+    "we_call_the_coin": {
+      "manual_coin": true,
+      "frames_tested": 60,
+      "identical_after_respam": 60,
+      "deterministic_fraction": 1.0,
+      "coin_frames": 32,
+      "coin_frames_identical": 32,
+      "draw_frames": 35,
+      "draw_frames_identical": 35,
+      "same_belief_replays_identically": true
+    }
+  }
+}

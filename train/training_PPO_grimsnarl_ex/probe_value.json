@@ -1,0 +1,186 @@
+{
+  "episodes": {
+    "train": 4097,
+    "val": 250
+  },
+  "baseline: constant (train mean)": {
+    "overall": {
+      "explained_variance": 0.0,
+      "accuracy": 0.4985583655984842,
+      "n": 12139
+    },
+    "by_turn": [
+      {
+        "turn": "0-4",
+        "n": 3988,
+        "explained_variance": 2.3872122767443216e-07,
+        "accuracy": 0.4821965897693079
+      },
+      {
+        "turn": "5-8",
+        "n": 3699,
+        "explained_variance": 1.192783303238798e-07,
+        "accuracy": 0.48796972154636387
+      },
+      {
+        "turn": "9-12",
+        "n": 2407,
+        "explained_variance": 2.384531591070882e-07,
+        "accuracy": 0.5060240963855421
+      },
+      {
+        "turn": "13-18",
+        "n": 1372,
+        "explained_variance": -1.1933202714864422e-07,
+        "accuracy": 0.5160349854227405
+      },
+      {
+        "turn": "19-26",
+        "n": 503,
+        "explained_variance": 1.8166372361960725e-07,
+        "accuracy": 0.562624254473161
+      },
+      {
+        "turn": "27-200",
+        "n": 170,
+        "explained_variance": 0.0,
+        "accuracy": 0.6764705882352942
+      }
+    ]
+  },
+  "baseline: first-player only": {
+    "overall": {
+      "explained_variance": 0.008628379745269088,
+      "accuracy": 0.5493862756404976,
+      "n": 12139
+    },
+    "by_turn": [
+      {
+        "turn": "0-4",
+        "n": 3988,
+        "explained_variance": 0.007308092303472402,
+        "accuracy": 0.5416248746238717
+      },
+      {
+        "turn": "5-8",
+        "n": 3699,
+        "explained_variance": 0.010018544798406248,
+        "accuracy": 0.5547445255474452
+      },
+      {
+        "turn": "9-12",
+        "n": 2407,
+        "explained_variance": 0.010102843059132227,
+        "accuracy": 0.5546323223930204
+      },
+      {
+        "turn": "13-18",
+        "n": 1372,
+        "explained_variance": 0.007396557032355644,
+        "accuracy": 0.543731778425656
+      },
+      {
+        "turn": "19-26",
+        "n": 503,
+        "explained_variance": 0.015630891770869515,
+        "accuracy": 0.5765407554671969
+      },
+      {
+        "turn": "27-200",
+        "n": 170,
+        "explained_variance": -0.004309840345947391,
+        "accuracy": 0.5058823529411764
+      }
+    ]
+  },
+  "baseline: prize differential only (x1.14)": {
+    "overall": {
+      "explained_variance": 0.1223657659575762,
+      "accuracy": 0.6074635472444189,
+      "n": 12139
+    },
+    "by_turn": [
+      {
+        "turn": "0-4",
+        "n": 3988,
+        "explained_variance": -0.041842340623442054,
+        "accuracy": 0.485456369107322
+      },
+      {
+        "turn": "5-8",
+        "n": 3699,
+        "explained_variance": 0.12008208734692494,
+        "accuracy": 0.5969180859691808
+      },
+      {
+        "turn": "9-12",
+        "n": 2407,
+        "explained_variance": 0.2787548429091452,
+        "accuracy": 0.7195679268799335
+      },
+      {
+        "turn": "13-18",
+        "n": 1372,
+        "explained_variance": 0.2876283117620806,
+        "accuracy": 0.7412536443148688
+      },
+      {
+        "turn": "19-26",
+        "n": 503,
+        "explained_variance": 0.2807644336824163,
+        "accuracy": 0.7415506958250497
+      },
+      {
+        "turn": "27-200",
+        "n": 170,
+        "explained_variance": 0.050220329523720464,
+        "accuracy": 0.6352941176470588
+      }
+    ]
+  },
+  "learned: scalar MLP (24 features)": {
+    "overall": {
+      "explained_variance": 0.29385260055416085,
+      "accuracy": 0.7218881291704424,
+      "n": 12139
+    },
+    "by_turn": [
+      {
+        "turn": "0-4",
+        "n": 3988,
+        "explained_variance": 0.08795683633738138,
+        "accuracy": 0.6263791374122367
+      },
+      {
+        "turn": "5-8",
+        "n": 3699,
+        "explained_variance": 0.24863025238400105,
+        "accuracy": 0.6991078669910786
+      },
+      {
+        "turn": "9-12",
+        "n": 2407,
+        "explained_variance": 0.47393626492813645,
+        "accuracy": 0.8105525550477773
+      },
+      {
+        "turn": "13-18",
+        "n": 1372,
+        "explained_variance": 0.5339255881278953,
+        "accuracy": 0.8323615160349854
+      },
+      {
+        "turn": "19-26",
+        "n": 503,
+        "explained_variance": 0.5339033860240889,
+        "accuracy": 0.8429423459244533
+      },
+      {
+        "turn": "27-200",
+        "n": 170,
+        "explained_variance": 0.8400463692522782,
+        "accuracy": 0.9529411764705882
+      }
+    ]
+  }
+}

@@ -1,0 +1,74 @@
+[
+  {
+    "label": "as measured (random setup, uniform prior)",
+    "setup_policy": "",
+    "prior": "uniform",
+    "root_prior": "",
+    "per_opponent": {
+      "crustle": 0.18,
+      "alakazam": 0.14,
+      "lucario": 0.32
+    },
+    "win_rate": 0.21333333333333335,
+    "ci95": [
+      0.1707518836854917,
+      0.26316368284654346
+    ],
+    "wins": 64,
+    "played": 300
+  },
+  {
+    "label": "+ BC setup phase",
+    "setup_policy": "frozen:crustle",
+    "prior": "uniform",
+    "root_prior": "",
+    "per_opponent": {
+      "crustle": 0.25,
+      "alakazam": 0.11,
+      "lucario": 0.21
+    },
+    "win_rate": 0.19,
+    "ci95": [
+      0.14963418279656143,
+      0.23820474380203466
+    ],
+    "wins": 57,
+    "played": 300
+  },
+  {
+    "label": "+ heuristic prior",
+    "setup_policy": "frozen:crustle",
+    "prior": "heuristic",
+    "root_prior": "",
+    "per_opponent": {
+      "crustle": 0.11,
+      "alakazam": 0.11,
+      "lucario": 0.38
+    },
+    "win_rate": 0.2,
+    "ci95": [
+      0.15865617190196185,
+      0.24892988609667954
+    ],
+    "wins": 60,
+    "played": 300
+  },
+  {
+    "label": "+ BC root prior",
+    "setup_policy": "frozen:crustle",
+    "prior": "heuristic",
+    "root_prior": "frozen:crustle",
+    "per_opponent": {
+      "crustle": 0.3,
+      "alakazam": 0.1414141414141414,
+      "lucario": 0.45
+    },
+    "win_rate": 0.2976588628762542,
+    "ci95": [
+      0.24866468926339946,
+      0.35178650370348497
+    ],
+    "wins": 89,
+    "played": 299
+  }
+]

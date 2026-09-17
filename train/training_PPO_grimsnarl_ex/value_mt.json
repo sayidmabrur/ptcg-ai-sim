@@ -1,0 +1,680 @@
+{
+  "sweep": [
+    {
+      "ev": 0.29734158515930176,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.29640841484069824,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2960623502731323,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2956719994544983,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2956511378288269,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2956392765045166,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.29548877477645874,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2950737476348877,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2949010133743286,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2947326898574829,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.29439735412597656,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.29434460401535034,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2939889430999756,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.29278135299682617,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.29257428646087646,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.29242485761642456,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2922821044921875,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.29202842712402344,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2919124364852905,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2915092706680298,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2912448048591614,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.29109591245651245,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2908274531364441,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2907560467720032,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2907400131225586,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.29040753841400146,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2903267741203308,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.29005616903305054,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2897936701774597,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2897679805755615,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.28959590196609497,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2894721031188965,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2893463373184204,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.28925514221191406,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.28892070055007935,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.28880566358566284,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.28876107931137085,
+      "hidden": 128,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.28857946395874023,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2885175943374634,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.288138210773468,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2879646420478821,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.28794360160827637,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.28791195154190063,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2877644896507263,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.28761905431747437,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2875319719314575,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2871168255805969,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2869477868080139,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.28692352771759033,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2868160605430603,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.28663188219070435,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.28655916452407837,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.28635114431381226,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2863098978996277,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2861940264701843,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.28548097610473633,
+      "hidden": 512,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.28512394428253174,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.28496211767196655,
+      "hidden": 256,
+      "layers": 2,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2840721011161804,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2839958667755127,
+      "hidden": 128,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2834411859512329,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.28336644172668457,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2831501364707947,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2829135060310364,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.28128230571746826,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.001,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.27931368350982666,
+      "hidden": 256,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2781338095664978,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.27783042192459106,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 1.0
+    },
+    {
+      "ev": 0.2767952084541321,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.27645307779312134,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.5
+    },
+    {
+      "ev": 0.2757912278175354,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.15,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    },
+    {
+      "ev": 0.2720121145248413,
+      "hidden": 512,
+      "layers": 3,
+      "dropout": 0.05,
+      "lr": 0.003,
+      "margin_weight": 0.0
+    }
+  ],
+  "held-out self-play (our matchups)": {
+    "overall": {
+      "explained_variance": 0.29419922828674316,
+      "accuracy": 0.7256721095167409,
+      "n": 48504
+    },
+    "by_turn": [
+      {
+        "turn": "1-4",
+        "n": 12290,
+        "explained_variance": 0.12222099304199219,
+        "accuracy": 0.6485760781122865
+      },
+      {
+        "turn": "5-8",
+        "n": 11136,
+        "explained_variance": 0.2105104923248291,
+        "accuracy": 0.6883081896551724
+      },
+      {
+        "turn": "9-12",
+        "n": 7928,
+        "explained_variance": 0.32320499420166016,
+        "accuracy": 0.749117053481332
+      },
+      {
+        "turn": "13-18",
+        "n": 7358,
+        "explained_variance": 0.38388967514038086,
+        "accuracy": 0.7675998912748029
+      },
+      {
+        "turn": "19-26",
+        "n": 4898,
+        "explained_variance": 0.5010051727294922,
+        "accuracy": 0.8091057574520212
+      },
+      {
+        "turn": "27-200",
+        "n": 4894,
+        "explained_variance": 0.5281594693660736,
+        "accuracy": 0.8197793216183081
+      }
+    ]
+  },
+  "held-out, our matchups only": {
+    "overall": {
+      "explained_variance": 0.26767849922180176,
+      "accuracy": 0.7129034948702978,
+      "n": 23978
+    },
+    "by_turn": [
+      {
+        "turn": "1-4",
+        "n": 6028,
+        "explained_variance": 0.06243973970413208,
+        "accuracy": 0.619442601194426
+      },
+      {
+        "turn": "5-8",
+        "n": 5368,
+        "explained_variance": 0.1306477189064026,
+        "accuracy": 0.6479135618479881
+      },
+      {
+        "turn": "9-12",
+        "n": 3922,
+        "explained_variance": 0.28198128938674927,
+        "accuracy": 0.7312595614482407
+      },
+      {
+        "turn": "13-18",
+        "n": 4150,
+        "explained_variance": 0.4171292781829834,
+        "accuracy": 0.7843373493975904
+      },
+      {
+        "turn": "19-26",
+        "n": 2670,
+        "explained_variance": 0.5631005764007568,
+        "accuracy": 0.8382022471910112
+      },
+      {
+        "turn": "27-200",
+        "n": 1840,
+        "explained_variance": 0.5440148413181305,
+        "accuracy": 0.8266304347826087
+      }
+    ]
+  },
+  "hyperparameters": {
+    "hidden": 512,
+    "layers": 2,
+    "dropout": 0.15,
+    "lr": 0.001,
+    "weight_decay": 0.0001,
+    "batch": 2048,
+    "margin_weight": 1.0,
+    "patience": 12
+  }
+}

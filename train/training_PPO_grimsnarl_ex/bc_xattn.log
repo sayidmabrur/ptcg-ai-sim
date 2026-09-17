@@ -1,0 +1,250 @@
+[bc] 841,016 archetype frames over 8,436 episodes (0s to index)
+[bc] train 799,323 frames / 8,015 games,  val 41,693 frames / 421 games
+wandb: [wandb.login()] Loaded credentials for https://api.wandb.ai from /home/steve/.netrc.
+wandb: Currently logged in as: sayid-10121012 (sayid-10121012-universitas-komputer-indonesia) to https://api.wandb.ai. Use `wandb login --relogin` to force relogin
+wandb: setting up run jtebzfiy
+wandb: Tracking run with wandb version 0.28.1
+wandb: Run data is saved locally in /home/steve/projects/pokemon-tcg-RL/training_PPO_grimsnarl_ex/wandb/run-20260811_225543-jtebzfiy
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run bc-grimsnarl-xattn
+wandb: ⭐️ View project at https://wandb.ai/sayid-10121012-universitas-komputer-indonesia/pokemon-tcg-rl
+wandb: 🚀 View run at https://wandb.ai/sayid-10121012-universitas-komputer-indonesia/pokemon-tcg-rl/runs/jtebzfiy
+[wandb] https://wandb.ai/sayid-10121012-universitas-komputer-indonesia/pokemon-tcg-rl/runs/jtebzfiy
+[bc] warm-started from challenger/bc_policy.pt; 37 keys absent, in ['option_cross'] (trained fresh)
+[bc] 2,681,153 parameters on cuda
+[bc] epoch 0 step 200 loss 0.6071 (267 frames/s)
+[bc] epoch 0 step 400 loss 0.9303 (283 frames/s)
+[bc] epoch 0 step 600 loss 0.6578 (289 frames/s)
+[bc] epoch 0 step 800 loss 0.4938 (292 frames/s)
+[bc] epoch 0 step 1000 loss 0.8277 (298 frames/s)
+[bc] epoch 0 step 1200 loss 0.8610 (300 frames/s)
+[bc] epoch 0 step 1400 loss 1.1245 (303 frames/s)
+[bc] epoch 0 step 1600 loss 1.0414 (305 frames/s)
+[bc] epoch 0 step 1800 loss 0.5160 (304 frames/s)
+[bc] epoch 0 step 2000 loss 0.4402 (303 frames/s)
+[bc] step 2000  val_loss 0.7761  val_exact 72.3%  <- best, saved
+[bc] epoch 0 step 2200 loss 0.7682 (293 frames/s)
+[bc] epoch 0 step 2400 loss 0.6369 (293 frames/s)
+[bc] epoch 0 step 2600 loss 1.1715 (293 frames/s)
+[bc] epoch 0 step 2800 loss 1.6408 (292 frames/s)
+[bc] epoch 0 step 3000 loss 0.7689 (292 frames/s)
+[bc] epoch 0 step 3200 loss 0.5355 (291 frames/s)
+[bc] epoch 0 step 3400 loss 0.6903 (291 frames/s)
+[bc] epoch 0 step 3600 loss 0.7004 (291 frames/s)
+[bc] epoch 0 step 3800 loss 0.5511 (291 frames/s)
+[bc] epoch 0 step 4000 loss 0.6290 (291 frames/s)
+[bc] step 4000  val_loss 0.7650  val_exact 73.3%  <- best, saved
+[bc] epoch 0 step 4200 loss 0.6188 (285 frames/s)
+[bc] epoch 0 step 4400 loss 0.7031 (286 frames/s)
+[bc] epoch 0 step 4600 loss 0.8259 (286 frames/s)
+[bc] epoch 0 step 4800 loss 0.7173 (287 frames/s)
+[bc] epoch 0 step 5000 loss 0.5257 (288 frames/s)
+[bc] epoch 0 step 5200 loss 0.5763 (289 frames/s)
+[bc] epoch 0 step 5400 loss 0.6812 (291 frames/s)
+[bc] epoch 0 step 5600 loss 0.8735 (292 frames/s)
+[bc] epoch 0 step 5800 loss 0.8545 (291 frames/s)
+[bc] epoch 0 step 6000 loss 1.0519 (290 frames/s)
+[bc] step 6000  val_loss 0.7596  val_exact 73.4%  <- best, saved
+[bc] epoch 0 step 6200 loss 0.7607 (287 frames/s)
+[bc] epoch 0 step 6400 loss 0.9100 (287 frames/s)
+[bc] epoch 0 step 6600 loss 0.8701 (286 frames/s)
+[bc] epoch 0 step 6800 loss 1.3146 (286 frames/s)
+[bc] epoch 0 step 7000 loss 0.7442 (286 frames/s)
+[bc] epoch 0 step 7200 loss 0.9738 (286 frames/s)
+[bc] epoch 0 step 7400 loss 0.6584 (286 frames/s)
+[bc] epoch 0 step 7600 loss 0.6416 (286 frames/s)
+[bc] epoch 0 step 7800 loss 0.7359 (286 frames/s)
+[bc] epoch 0 step 8000 loss 0.5749 (286 frames/s)
+[bc] step 8000  val_loss 0.7582  val_exact 73.5%  <- best, saved
+[bc] epoch 0 step 8200 loss 0.8546 (284 frames/s)
+[bc] epoch 0 step 8400 loss 0.7329 (284 frames/s)
+[bc] epoch 0 step 8600 loss 0.7228 (284 frames/s)
+[bc] epoch 0 step 8800 loss 0.8390 (283 frames/s)
+[bc] epoch 0 step 9000 loss 0.7437 (282 frames/s)
+[bc] epoch 0 step 9200 loss 0.8195 (282 frames/s)
+[bc] epoch 0 step 9400 loss 0.6958 (282 frames/s)
+[bc] epoch 0 step 9600 loss 0.7595 (282 frames/s)
+[bc] epoch 0 step 9800 loss 0.7512 (281 frames/s)
+[bc] epoch 0 step 10000 loss 0.5461 (281 frames/s)
+[bc] step 10000  val_loss 0.7543  val_exact 73.2%
+[bc] epoch 0 step 10200 loss 0.6182 (279 frames/s)
+[bc] epoch 0 step 10400 loss 0.6248 (280 frames/s)
+[bc] epoch 0 step 10600 loss 0.6582 (280 frames/s)
+[bc] epoch 0 step 10800 loss 0.6942 (279 frames/s)
+[bc] epoch 0 step 11000 loss 0.5643 (278 frames/s)
+[bc] epoch 0 step 11200 loss 1.0641 (278 frames/s)
+[bc] epoch 0 step 11400 loss 1.1667 (277 frames/s)
+[bc] epoch 0 step 11600 loss 0.7025 (278 frames/s)
+[bc] epoch 0 step 11800 loss 1.0933 (278 frames/s)
+[bc] epoch 0 step 12000 loss 0.6830 (278 frames/s)
+[bc] step 12000  val_loss 0.7645  val_exact 73.7%  <- best, saved
+[bc] epoch 0 step 12200 loss 0.3889 (277 frames/s)
+[bc] epoch 0 step 12400 loss 0.7184 (276 frames/s)
+[bc] epoch 1 step 12600 loss 0.5282 (276 frames/s)
+[bc] epoch 1 step 12800 loss 0.7722 (275 frames/s)
+[bc] epoch 1 step 13000 loss 0.5022 (275 frames/s)
+[bc] epoch 1 step 13200 loss 0.7492 (275 frames/s)
+[bc] epoch 1 step 13400 loss 0.7257 (275 frames/s)
+[bc] epoch 1 step 13600 loss 0.6038 (275 frames/s)
+[bc] epoch 1 step 13800 loss 0.6605 (275 frames/s)
+[bc] epoch 1 step 14000 loss 0.4825 (276 frames/s)
+[bc] step 14000  val_loss 0.7421  val_exact 74.3%  <- best, saved
+[bc] epoch 1 step 14200 loss 0.6300 (275 frames/s)
+[bc] epoch 1 step 14400 loss 0.9394 (276 frames/s)
+[bc] epoch 1 step 14600 loss 0.8961 (276 frames/s)
+[bc] epoch 1 step 14800 loss 1.0724 (276 frames/s)
+[bc] epoch 1 step 15000 loss 1.1030 (277 frames/s)
+[bc] epoch 1 step 15200 loss 0.5090 (277 frames/s)
+[bc] epoch 1 step 15400 loss 0.7206 (277 frames/s)
+[bc] epoch 1 step 15600 loss 0.9322 (277 frames/s)
+[bc] epoch 1 step 15800 loss 0.8943 (277 frames/s)
+[bc] epoch 1 step 16000 loss 1.2169 (278 frames/s)
+[bc] step 16000  val_loss 0.7419  val_exact 74.2%
+[bc] epoch 1 step 16200 loss 0.7128 (277 frames/s)
+[bc] epoch 1 step 16400 loss 1.0652 (277 frames/s)
+[bc] epoch 1 step 16600 loss 0.5540 (277 frames/s)
+[bc] epoch 1 step 16800 loss 0.8512 (277 frames/s)
+[bc] epoch 1 step 17000 loss 0.9057 (277 frames/s)
+[bc] epoch 1 step 17200 loss 0.9456 (277 frames/s)
+[bc] epoch 1 step 17400 loss 0.7429 (277 frames/s)
+[bc] epoch 1 step 17600 loss 0.3357 (277 frames/s)
+[bc] epoch 1 step 17800 loss 0.7049 (278 frames/s)
+[bc] epoch 1 step 18000 loss 0.7011 (278 frames/s)
+[bc] step 18000  val_loss 0.7473  val_exact 74.3%
+[bc] epoch 1 step 18200 loss 0.7186 (277 frames/s)
+[bc] epoch 1 step 18400 loss 0.5808 (277 frames/s)
+[bc] epoch 1 step 18600 loss 0.5528 (278 frames/s)
+[bc] epoch 1 step 18800 loss 0.7813 (278 frames/s)
+[bc] epoch 1 step 19000 loss 0.5972 (278 frames/s)
+[bc] epoch 1 step 19200 loss 0.8185 (278 frames/s)
+[bc] epoch 1 step 19400 loss 0.7323 (278 frames/s)
+[bc] epoch 1 step 19600 loss 0.7382 (278 frames/s)
+[bc] epoch 1 step 19800 loss 0.7045 (279 frames/s)
+[bc] epoch 1 step 20000 loss 0.7977 (279 frames/s)
+[bc] step 20000  val_loss 0.7458  val_exact 75.0%  <- best, saved
+[bc] epoch 1 step 20200 loss 0.5165 (279 frames/s)
+[bc] epoch 1 step 20400 loss 0.8579 (279 frames/s)
+[bc] epoch 1 step 20600 loss 0.8085 (279 frames/s)
+[bc] epoch 1 step 20800 loss 0.9430 (279 frames/s)
+[bc] epoch 1 step 21000 loss 0.6072 (279 frames/s)
+[bc] epoch 1 step 21200 loss 0.6930 (278 frames/s)
+[bc] epoch 1 step 21400 loss 0.6071 (278 frames/s)
+[bc] epoch 1 step 21600 loss 0.8405 (278 frames/s)
+[bc] epoch 1 step 21800 loss 0.8297 (278 frames/s)
+[bc] epoch 1 step 22000 loss 0.6043 (279 frames/s)
+[bc] step 22000  val_loss 0.7425  val_exact 74.3%
+[bc] epoch 1 step 22200 loss 0.8115 (278 frames/s)
+[bc] epoch 1 step 22400 loss 0.8644 (278 frames/s)
+[bc] epoch 1 step 22600 loss 0.7483 (279 frames/s)
+[bc] epoch 1 step 22800 loss 0.6364 (279 frames/s)
+[bc] epoch 1 step 23000 loss 0.6170 (280 frames/s)
+[bc] epoch 1 step 23200 loss 0.6955 (280 frames/s)
+[bc] epoch 1 step 23400 loss 0.5836 (280 frames/s)
+[bc] epoch 1 step 23600 loss 0.4710 (280 frames/s)
+[bc] epoch 1 step 23800 loss 0.8694 (280 frames/s)
+[bc] epoch 1 step 24000 loss 0.5062 (281 frames/s)
+[bc] step 24000  val_loss 0.7410  val_exact 73.6%
+[bc] epoch 1 step 24200 loss 0.9368 (280 frames/s)
+[bc] epoch 1 step 24400 loss 0.6171 (281 frames/s)
+[bc] epoch 1 step 24600 loss 0.5326 (281 frames/s)
+[bc] epoch 1 step 24800 loss 0.5557 (282 frames/s)
+[bc] epoch 2 step 25000 loss 0.6595 (282 frames/s)
+[bc] epoch 2 step 25200 loss 0.5337 (282 frames/s)
+[bc] epoch 2 step 25400 loss 0.7985 (283 frames/s)
+[bc] epoch 2 step 25600 loss 0.6723 (283 frames/s)
+[bc] epoch 2 step 25800 loss 0.7051 (284 frames/s)
+[bc] epoch 2 step 26000 loss 0.7533 (284 frames/s)
+[bc] step 26000  val_loss 0.7485  val_exact 74.0%
+[bc] epoch 2 step 26200 loss 0.6062 (284 frames/s)
+[bc] epoch 2 step 26400 loss 0.6945 (284 frames/s)
+[bc] epoch 2 step 26600 loss 0.7824 (285 frames/s)
+[bc] epoch 2 step 26800 loss 0.5142 (285 frames/s)
+[bc] epoch 2 step 27000 loss 0.6996 (285 frames/s)
+[bc] epoch 2 step 27200 loss 0.8769 (286 frames/s)
+[bc] epoch 2 step 27400 loss 0.4848 (286 frames/s)
+[bc] epoch 2 step 27600 loss 0.4094 (286 frames/s)
+[bc] epoch 2 step 27800 loss 0.5583 (287 frames/s)
+[bc] epoch 2 step 28000 loss 0.8208 (287 frames/s)
+[bc] step 28000  val_loss 0.7343  val_exact 74.6%
+[bc] epoch 2 step 28200 loss 0.7325 (287 frames/s)
+[bc] epoch 2 step 28400 loss 0.6640 (287 frames/s)
+[bc] epoch 2 step 28600 loss 0.8809 (287 frames/s)
+[bc] epoch 2 step 28800 loss 0.7630 (288 frames/s)
+[bc] epoch 2 step 29000 loss 0.8167 (288 frames/s)
+[bc] epoch 2 step 29200 loss 0.5363 (288 frames/s)
+[bc] epoch 2 step 29400 loss 0.5810 (289 frames/s)
+[bc] epoch 2 step 29600 loss 0.6811 (289 frames/s)
+[bc] epoch 2 step 29800 loss 0.5630 (289 frames/s)
+[bc] epoch 2 step 30000 loss 0.6940 (290 frames/s)
+[bc] step 30000  val_loss 0.7363  val_exact 73.6%
+[bc] epoch 2 step 30200 loss 0.9675 (289 frames/s)
+[bc] epoch 2 step 30400 loss 0.6907 (290 frames/s)
+[bc] epoch 2 step 30600 loss 0.7205 (290 frames/s)
+[bc] epoch 2 step 30800 loss 0.8327 (290 frames/s)
+[bc] epoch 2 step 31000 loss 0.9251 (290 frames/s)
+[bc] epoch 2 step 31200 loss 0.8292 (291 frames/s)
+[bc] epoch 2 step 31400 loss 0.7623 (291 frames/s)
+[bc] epoch 2 step 31600 loss 0.8228 (291 frames/s)
+[bc] epoch 2 step 31800 loss 0.9065 (292 frames/s)
+[bc] epoch 2 step 32000 loss 0.6838 (292 frames/s)
+[bc] step 32000  val_loss 0.7303  val_exact 74.1%
+[bc] epoch 2 step 32200 loss 0.7287 (292 frames/s)
+[bc] epoch 2 step 32400 loss 0.8813 (292 frames/s)
+[bc] epoch 2 step 32600 loss 1.0273 (292 frames/s)
+[bc] epoch 2 step 32800 loss 0.8114 (292 frames/s)
+[bc] epoch 2 step 33000 loss 0.7520 (293 frames/s)
+[bc] epoch 2 step 33200 loss 0.9325 (293 frames/s)
+[bc] epoch 2 step 33400 loss 0.7642 (293 frames/s)
+[bc] epoch 2 step 33600 loss 0.9125 (293 frames/s)
+[bc] epoch 2 step 33800 loss 0.7833 (294 frames/s)
+[bc] epoch 2 step 34000 loss 0.8526 (294 frames/s)
+[bc] step 34000  val_loss 0.7395  val_exact 74.4%
+[bc] epoch 2 step 34200 loss 0.7622 (293 frames/s)
+[bc] epoch 2 step 34400 loss 0.6443 (294 frames/s)
+[bc] epoch 2 step 34600 loss 0.4485 (294 frames/s)
+[bc] epoch 2 step 34800 loss 0.6356 (294 frames/s)
+[bc] epoch 2 step 35000 loss 0.7766 (294 frames/s)
+[bc] epoch 2 step 35200 loss 0.3949 (295 frames/s)
+[bc] epoch 2 step 35400 loss 0.5288 (295 frames/s)
+[bc] epoch 2 step 35600 loss 0.9641 (295 frames/s)
+[bc] epoch 2 step 35800 loss 0.7922 (295 frames/s)
+[bc] epoch 2 step 36000 loss 0.9210 (295 frames/s)
+[bc] step 36000  val_loss 0.7406  val_exact 74.2%
+[bc] epoch 2 step 36200 loss 0.6633 (295 frames/s)
+[bc] epoch 2 step 36400 loss 0.6742 (295 frames/s)
+[bc] epoch 2 step 36600 loss 1.0044 (296 frames/s)
+[bc] epoch 2 step 36800 loss 0.5615 (296 frames/s)
+[bc] epoch 2 step 37000 loss 0.5888 (296 frames/s)
+[bc] epoch 2 step 37200 loss 0.7533 (296 frames/s)
+[bc] epoch 2 step 37400 loss 0.8173 (296 frames/s)
+wandb: uploading history steps 185-185, summary, console lines 207-207; updating run metadata
+wandb: updating run metadata
+wandb: uploading config.yaml; uploading output.log; uploading wandb-summary.json
+wandb: uploading config.yaml; uploading wandb-summary.json
+wandb: 
+wandb: Run history:
+wandb: bc/best_val_exact_match ▁▃▄▄▄▅▆▆▆█████████
+wandb:                bc/epoch ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▅▅▅▅▅▅▅▅▅▅▅▅▅▅██████████
+wandb:    bc/frames_per_second ▅▆█▅▄▄▄▃▃▃▁▁▁▁▂▁▂▂▂▂▂▂▂▂▂▃▃▃▄▄▄▅▅▆▆▆▆▇▇▇
+wandb:                   bc/lr ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+wandb:           bc/train_loss ▆▁▅▁▄▁▄▃▄▄█▃▇▄▃▆▇▅▅▆▂▃▁▅▆▂▁▆▂▂▂▃▃▅▃▂▄▄▃▄
+wandb:      bc/val_exact_match ▁▃▄▄▃▅▆▆▆█▆▄▅▇▄▆▆▆
+wandb:             bc/val_loss █▆▅▅▅▆▃▃▄▃▃▃▄▂▂▁▂▃
+wandb: 
+wandb: Run summary:
+wandb: bc/best_val_exact_match 0.75026
+wandb:                bc/epoch 2
+wandb:    bc/frames_per_second 296.39333
+wandb:                   bc/lr 0.0002
+wandb:              bc/minutes 134.79742
+wandb:                bc/steps 37470
+wandb:           bc/train_loss 0.81728
+wandb:      bc/val_exact_match 0.74245
+wandb:             bc/val_loss 0.74061
+wandb: 
+wandb: 🚀 View run bc-grimsnarl-xattn at: https://wandb.ai/sayid-10121012-universitas-komputer-indonesia/pokemon-tcg-rl/runs/jtebzfiy
+wandb: ⭐️ View project at: https://wandb.ai/sayid-10121012-universitas-komputer-indonesia/pokemon-tcg-rl
+wandb: Synced 5 W&B file(s), 0 media file(s), 0 artifact file(s) and 0 other file(s)
+wandb: Find logs at: ./wandb/run-20260811_225543-jtebzfiy/logs
+[bc] done in 134.8 min, best val exact 75.0%
+[bc] checkpoint -> challenger/bc_policy_xattn.pt
