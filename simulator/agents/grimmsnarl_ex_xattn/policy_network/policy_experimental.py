@@ -36,6 +36,7 @@ from vocab import (
     TARGETS_OPPONENT_VOCAB_SIZE,
     AreaType,
     EnergyType,
+    embedding_card_id,
 )
 
 D = 64  # shared embedding/hidden width
@@ -242,7 +243,7 @@ class CardEmbed(nn.Module):
         )
         out = torch.cat(
             [
-                self.id(card_id), self.stage(stage), self.type_embed(ctype),
+                self.id(embedding_card_id(card_id)), self.stage(stage), self.type_embed(ctype),
                 self.energy_type(energy_type), self.weakness(weakness),
                 self.resistance(resistance), self.ability(ability),
                 flags, skill_flags,

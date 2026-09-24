@@ -178,10 +178,35 @@ class SelectContext(IntEnum):
 #: sorting the ids returned and checking against ``range(1, max+1)``), so a
 #: dense embedding table indexed by id works directly; 0 is reserved as the
 #: "no card"/"no attack" sentinel for optional fields.
-MAX_CARD_ID = len(all_card_data())
-MAX_ATTACK_ID = len(all_attack())
+#:
+#: That held for the card pool the checkpoint was cloned from, 1..1267 cards and
+#: 1..1556 attacks, and its embeddings are sized to it. The engine can now hold
+#: more: cards added on top of the pool (``CardImplExtra.h``), plus the two ids
+#: the engine reserves for cards it already branches on (1268 Nitro Fire Energy,
+#: 1429 Ange Floette, see ``Core.h``). So the two sizes are kept apart. An id
+#: embedding is sized to the trained pool -- anything past it has no learned
+#: vector and reads as 0, "unknown card" -- whereas the static per-card tables
+#: below are sized to the whole engine, so a new card still arrives with its real
+#: HP, stage, type, weakness and rules-text flags. The pool size is pinned rather
+#: than derived, because nothing in the engine can say which ids were in the
+#: training replays; a checkpoint cloned on a larger pool changes these two.
+TRAINED_CARD_POOL = 1267
+TRAINED_ATTACK_POOL = 1556
+
+_ALL_CARDS = all_card_data()
+_ALL_ATTACKS = all_attack()
+MAX_CARD_ID = min(TRAINED_CARD_POOL, max(card.cardId for card in _ALL_CARDS))
+MAX_ATTACK_ID = min(TRAINED_ATTACK_POOL, max(attack.attackId for attack in _ALL_ATTACKS))
 CARD_ID_VOCAB_SIZE = MAX_CARD_ID + 1
 ATTACK_ID_VOCAB_SIZE = MAX_ATTACK_ID + 1
+CARD_TABLE_SIZE = max(card.cardId for card in _ALL_CARDS) + 1
+ATTACK_TABLE_SIZE = max(attack.attackId for attack in _ALL_ATTACKS) + 1
+
+
+def embedding_card_id(card_id: torch.Tensor) -> torch.Tensor:
+    """``card_id`` as an index into an id embedding: ids past the trained pool
+    have no row of their own and share row 0."""
+    return torch.where(card_id < CARD_ID_VOCAB_SIZE, card_id, torch.zeros_like(card_id))
 
 
 class CardStage(IntEnum):
@@ -320,12 +345,16 @@ def _build_skill_tables():
     namespace, matching ``_build_attack_tables``.
     """
     names: dict[str, int] = {}
-    count = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-    ability = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-    flags = torch.zeros((CARD_ID_VOCAB_SIZE, SKILL_FLAG_COUNT), dtype=torch.long)
+    count = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+    ability = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+    flags = torch.zeros((CARD_TABLE_SIZE, SKILL_FLAG_COUNT), dtype=torch.long)
     compiled = [(index, re.compile(pattern)) for index, (_, pattern) in enumerate(_SKILL_PATTERNS)]
 
-    for card in all_card_data():
+    # Trained-pool cards first, so they are numbered exactly as they were when
+    # the checkpoint's ability embedding was sized. A card past the pool reuses
+    # the id of a skill it shares a name with (a reprint) and otherwise gets 0.
+    in_pool = sorted(_ALL_CARDS, key=lambda card: card.cardId > MAX_CARD_ID)
+    for card in in_pool:
         if not card.skills:
             continue
         count[card.cardId] = min(len(card.skills), SKILL_COUNT_CAP)
@@ -336,7 +365,10 @@ def _build_skill_tables():
         # flags below are OR-ed over both, which is the part that does not lose
         # information.
         skill_name = card.skills[0].name.strip()
-        ability[card.cardId] = names.setdefault(skill_name, len(names) + 1)
+        if card.cardId <= MAX_CARD_ID:
+            ability[card.cardId] = names.setdefault(skill_name, len(names) + 1)
+        else:
+            ability[card.cardId] = names.get(skill_name, 0)
         for skill in card.skills:
             text = _normalize_rules_text(skill.text)
             for index, pattern in compiled:
@@ -385,27 +417,27 @@ ENERGY_COST_CAP = 6.0
 #: default (0/False) — already correct for the shifted ``card_type``/
 #: ``energy_type`` tables too, since 0 there means "no card" not a real enum
 #: member.
-_CARD_STAGE = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-_CARD_TYPE = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-_CARD_ENERGY_TYPE = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
+_CARD_STAGE = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+_CARD_TYPE = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+_CARD_ENERGY_TYPE = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
 #: ``torch.long`` 0/1, not ``torch.bool`` — these are model-input features
 #: (unlike a padding/validity mask), so they follow the same ``int(bool)``
 #: convention used for every other boolean feature in this codebase
 #: (``poisoned``, ``stadium_played``, etc.) rather than the mask dtype.
-_CARD_EX = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-_CARD_MEGA_EX = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-_CARD_TERA = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-_CARD_ACE_SPEC = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
+_CARD_EX = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+_CARD_MEGA_EX = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+_CARD_TERA = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+_CARD_ACE_SPEC = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
 #: The quantities that actually decide Pokémon TCG lines, previously absent
 #: from the feature set entirely: printed HP (how much damage kills it),
 #: weakness/resistance (the x2 / -30 damage modifiers), and retreat cost (what
 #: escaping the Active Spot costs). Without these a policy has to memorize
 #: them per card id from the replays, which generalizes to nothing.
-_CARD_HP = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-_CARD_RETREAT_COST = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-_CARD_WEAKNESS = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-_CARD_RESISTANCE = torch.zeros(CARD_ID_VOCAB_SIZE, dtype=torch.long)
-for _card in all_card_data():
+_CARD_HP = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+_CARD_RETREAT_COST = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+_CARD_WEAKNESS = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+_CARD_RESISTANCE = torch.zeros(CARD_TABLE_SIZE, dtype=torch.long)
+for _card in _ALL_CARDS:
     if _card.basic:
         _stage = CardStage.BASIC
     elif _card.stage1:
@@ -503,15 +535,15 @@ ATTACK_EFFECT_FLAG_COUNT = len(ATTACK_EFFECT_FLAG_NAMES)
 def _build_attack_tables() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Built in a function rather than a module-level loop so the per-attack
     loop variables don't leak into the module namespace."""
-    damage = torch.zeros(ATTACK_ID_VOCAB_SIZE, dtype=torch.long)
-    energy_cost = torch.zeros(ATTACK_ID_VOCAB_SIZE, dtype=torch.long)
-    energy_type_counts = torch.zeros((ATTACK_ID_VOCAB_SIZE, len(EnergyType)), dtype=torch.long)
-    effect_flags = torch.zeros((ATTACK_ID_VOCAB_SIZE, ATTACK_EFFECT_FLAG_COUNT), dtype=torch.long)
+    damage = torch.zeros(ATTACK_TABLE_SIZE, dtype=torch.long)
+    energy_cost = torch.zeros(ATTACK_TABLE_SIZE, dtype=torch.long)
+    energy_type_counts = torch.zeros((ATTACK_TABLE_SIZE, len(EnergyType)), dtype=torch.long)
+    effect_flags = torch.zeros((ATTACK_TABLE_SIZE, ATTACK_EFFECT_FLAG_COUNT), dtype=torch.long)
     compiled = [
         (index, re.compile(pattern))
         for index, (_, pattern) in enumerate(_ATTACK_EFFECT_PATTERNS)
     ]
-    for attack in all_attack():
+    for attack in _ALL_ATTACKS:
         damage[attack.attackId] = attack.damage
         energy_cost[attack.attackId] = len(attack.energies)
         # A count per energy type, not a multi-hot: a cost of {G}{C}{C} needs
@@ -555,7 +587,7 @@ def attack_flags(attack_id: torch.Tensor) -> dict[str, torch.Tensor]:
     """
     safe = attack_id.clamp(min=0)
     return {
-        "attack_id_safe": safe,
+        "attack_id_safe": torch.where(safe < ATTACK_ID_VOCAB_SIZE, safe, torch.zeros_like(safe)),
         "attack_damage_norm": _ATTACK_DAMAGE_NORM[safe],
         "attack_energy_cost_norm": _ATTACK_ENERGY_COST_NORM[safe],
         "attack_energy_type_counts": _ATTACK_ENERGY_TYPE_COUNTS_NORM[safe],
