@@ -13,3 +13,10 @@ torch==2.9.1
 # on every worker start without it, and that warning is the first thing anyone
 # reads in the Space's logs when something else goes wrong.
 numpy==2.3.5
+
+# Saved battle logs are Parquet (replay_log.py): every game writes one, so the
+# server does not start without it.
+pyarrow==25.0.0
+
+# Only with PTCG_LIGHT_IMAGES=1, which re-encodes card art for metered tunnels.
+pillow==12.3.0
