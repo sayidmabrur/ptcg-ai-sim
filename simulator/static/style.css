@@ -454,3 +454,52 @@ button.ghost { background: transparent; }
   color: var(--dim); margin: 8px 2px 2px; opacity: .85;
 }
 .optionGroup:first-child { margin-top: 0; }
+
+/* -- mode menu and two-player lobby -------------------------------------- */
+.modal { position: fixed; inset: 0; background: #000c; z-index: 55;
+  display: flex; align-items: center; justify-content: center; padding: 20px; }
+.modal[hidden], #lobbyStep[hidden], #nameStep[hidden], #inviteBox[hidden] { display: none; }
+.modalInner { background: var(--panel); border: 1px solid #333c50; border-radius: 12px;
+  padding: 18px 20px; width: min(460px, 94vw); display: flex; flex-direction: column; gap: 10px; }
+.modalInner h2 { font-size: 13px; color: var(--ink); }
+.modeBtn { display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 12px 14px; text-align: left; }
+.modeBtn b { font-size: 14px; }
+.modeBtn span { color: var(--dim); font-size: 11.5px; }
+.modalInner input { background: #232b3a; color: var(--ink); border: 1px solid #333c50;
+  border-radius: 6px; padding: 6px 8px; font: inherit; flex: 1 1 auto; min-width: 0; }
+.modalInner .row { display: flex; gap: 8px; align-items: center; }
+.modalInner .row select { flex: 1 1 auto; min-width: 0; }
+.modalInner .hint { color: var(--dim); font-size: 12px; margin: 0; }
+.modalInner .err { color: var(--bad); font-size: 12px; margin: 0; min-height: 1em; }
+.lobbyPlayers { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lobbyPlayers li { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px;
+  border: 1px solid #333c50; border-radius: 8px; background: #1b2231; font-size: 13px; }
+.lobbyPlayers li.empty { color: var(--dim); border-style: dashed; }
+.lobbyPlayers .state { color: var(--dim); font-size: 12px; }
+.lobbyPlayers .state.ready { color: #7fd48a; }
+#lobbyReady.on { border-color: #7fd48a; color: #7fd48a; }
+.modalInner > div > label, .modalInner #lobbyStep > label { display: block; margin-top: 4px; }
+#nameStep, #lobbyStep { display: flex; flex-direction: column; gap: 8px; }
+#nameStep[hidden], #lobbyStep[hidden] { display: none; }
+
+/* -- watch replays ------------------------------------------------------- */
+#replayPanel { background: var(--panel); border: 1px solid #2b3448; border-radius: 10px; padding: 10px;
+  display: flex; flex-direction: column; gap: 8px; }
+#replayPanel[hidden], #choice[hidden] { display: none; }
+#rpTitle { color: var(--ink); text-transform: none; font-size: 14px; letter-spacing: 0; }
+.rpControls { display: grid; grid-template-columns: 44px 1fr 1fr 44px; gap: 6px; }
+.rpControls button { padding: 6px 4px; font-size: 13px; }
+#rpSeek { width: 100%; accent-color: var(--accent); }
+.rpPos { color: var(--dim); font-size: 12px; margin: 0; }
+.rpDecision { color: var(--ink); font-size: 13px; margin: 0; min-height: 3em; }
+.rpDecision b { color: var(--accent); }
+.replayListInner { width: min(720px, 96vw); max-height: 86vh; }
+.replayList { overflow: auto; max-height: 64vh; display: flex; flex-direction: column; gap: 6px; }
+.replayRow { display: grid; grid-template-columns: 150px 1fr auto; gap: 10px; align-items: center;
+  text-align: left; padding: 8px 10px; }
+.replayRow .when { color: var(--dim); font-size: 12px; }
+.replayRow .who { font-size: 13px; }
+.replayRow .meta { color: var(--dim); font-size: 12px; text-align: right; }
+.replayRow .won { color: #7fd48a; }
+.opp-hand .card.mini-card { width: 48px; min-height: 66px; }

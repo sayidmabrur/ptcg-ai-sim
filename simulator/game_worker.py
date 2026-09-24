@@ -141,7 +141,8 @@ def op_new(request: dict) -> dict:
     _agent_name = agent
 
     try:
-        _battle = engine.Battle(human_deck, agent_deck, seat, opponent)
+        _battle = engine.Battle(human_deck, agent_deck, seat, opponent,
+                                names=(request.get("playerName") or "Player", agent))
     except ValueError as exc:
         raise Refused(400, str(exc)) from exc
     _history = []
@@ -165,7 +166,107 @@ def op_select(request: dict) -> dict:
     return _view()
 
 
-OPS = {"new": op_new, "state": op_state, "select": op_select}
+# -- two players ------------------------------------------------------------
+#
+# A room's worker holds a PvpBattle instead: one engine battle, two people. Each
+# request names the seat it speaks for (the server resolves that from the
+# player's token, never from the browser), and each seat's view is built only
+# from what that seat may see.
+
+_pvp: engine.PvpBattle | None = None
+_pvp_names = ["Player 1", "Player 2"]
+_pvp_history: list[list[str]] = [[], []]
+
+
+def _pvp_view(seat: int) -> dict:
+    assert _pvp is not None
+    other = _pvp_names[1 - seat]
+    logs, steps = _pvp.take(seat)
+    _pvp_history[seat].extend(render.log_lines(logs, seat))
+    acting = _pvp.acting_seat
+    mine = acting == seat and not _pvp.finished
+    view = render.build_view(_pvp.obs, seat, other, [], your_turn=mine, result=_pvp.result)
+    if not mine:
+        # The current observation is the other seat's. Its own hand and whatever
+        # it is looking at are private to it; build_view already hides the hand
+        # of the seat it is not drawn for, and the looking area is dropped here.
+        # This seat's own hand is not in that observation at all, so the one it
+        # last held is shown until its next decision brings a fresh one.
+        view["looking"] = []
+        # The once-per-turn flags are the acting seat's, and the page draws them
+        # on this seat's nameplate; during the other player's turn none apply here.
+        view["flags"] = {flag: False for flag in view["flags"]}
+        own = _pvp.own_obs[seat]
+        if own is not None:
+            view["me"]["hand"] = render.player_view(own["current"]["players"][seat], True)["hand"]
+    view["ready"] = True
+    view["log"] = _pvp_history[seat][-200:]
+    view["steps"] = steps
+    view["events"] = [event for step in steps for event in step["events"]]
+    view["agent"] = other
+    view["names"] = {"you": _pvp_names[seat], "opponent": other}
+    view["pvp"] = True
+    view["version"] = _pvp.version
+    if _pvp.finished:
+        view["waitingOn"] = "nobody"
+        view["verdict"] = (
+            "Draw" if _pvp.result == 2
+            else "You win" if _pvp.result == seat else "You lose"
+        )
+    return view
+
+
+def _seat(request: dict) -> int:
+    seat = request.get("seat")
+    if seat not in (0, 1):
+        raise Refused(400, "no seat given")
+    return seat
+
+
+def op_pvp_new(request: dict) -> dict:
+    global _pvp, _pvp_names, _pvp_history
+    if _pvp is not None:
+        _pvp.close()
+        _pvp = None
+    decks = request.get("decks") or []
+    if len(decks) != 2:
+        raise Refused(400, "two decks are needed")
+    try:
+        _pvp_names = list(request.get("names") or ["Player 1", "Player 2"])
+        _pvp = engine.PvpBattle([[int(c) for c in d] for d in decks], _pvp_names)
+    except ValueError as exc:
+        raise Refused(400, str(exc)) from exc
+    _pvp_history = [[], []]
+    return {"started": True}
+
+
+def op_pvp_state(request: dict) -> dict:
+    if _pvp is None:
+        raise Refused(409, "the game has not started")
+    return _pvp_view(_seat(request))
+
+
+def op_pvp_version(request: dict) -> dict:
+    """How far the game has moved, without consuming anything -- for long polls."""
+    if _pvp is None:
+        raise Refused(409, "the game has not started")
+    return {"version": _pvp.version}
+
+
+def op_pvp_select(request: dict) -> dict:
+    if _pvp is None:
+        raise Refused(409, "the game has not started")
+    seat = _seat(request)
+    try:
+        _pvp.select(seat, [int(o) for o in request.get("options", [])])
+    except (ValueError, RuntimeError) as exc:
+        raise Refused(400, str(exc)) from exc
+    return _pvp_view(seat)
+
+
+OPS = {"new": op_new, "state": op_state, "select": op_select,
+       "pvp_new": op_pvp_new, "pvp_state": op_pvp_state, "pvp_select": op_pvp_select,
+       "pvp_version": op_pvp_version}
 
 
 def _reply(payload: dict) -> None:
@@ -200,6 +301,8 @@ def main() -> None:
 
     if _battle is not None:
         _battle.close()
+    if _pvp is not None:
+        _pvp.close()
 
 
 if __name__ == "__main__":

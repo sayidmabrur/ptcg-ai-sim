@@ -36,6 +36,12 @@ function sessionId() {
 
 async function api(path, body) {
   const headers = { "X-Session": sessionId() };
+  // In a two-player room the server tells the seats apart by this token alone.
+  if (pvp) headers["X-Player"] = pvp.token;
+  // Served through ngrok's free tier, a browser request can be answered with
+  // ngrok's "you are about to visit" page instead of the API; this header opts
+  // the page's own requests out of it. Anywhere else it is ignored.
+  headers["ngrok-skip-browser-warning"] = "1";
   if (body) headers["Content-Type"] = "application/json";
   const res = await fetch(path, {
     method: body ? "POST" : "GET",
@@ -349,11 +355,15 @@ function runSearch() {
 }
 
 async function startGame() {
+  if (buildingForRoom) { useDeckForRoom(); return; }
+  if (pvp) leaveRoomLocally();
   const body = {
     agent: chosenAgent,
     seat: Number($("seat").value),
     humanDeck: chosenDeck,
     humanCards: chosenDeck === null ? customDeck : null,
+    // For the saved replay's file name; the last name given in a 2-player lobby.
+    playerName: (() => { try { return localStorage.getItem("ptcg.name") || "Player"; } catch (e) { return "Player"; } })(),
   };
   $("status").textContent = "starting…";
   try {
@@ -585,13 +595,15 @@ function showPile(title, cards) {
 
 function chips(side, isMe) {
   const out = [];
-  if (isMe && view.flags) {
-    out.push(`<span class="chip ${view.flags.energy ? "spent" : ""}">energy attach</span>`);
-    out.push(`<span class="chip ${view.flags.supporter ? "spent" : ""}">supporter</span>`);
-    out.push(`<span class="chip ${view.flags.stadium ? "spent" : ""}">stadium</span>`);
-    out.push(`<span class="chip ${view.flags.retreat ? "spent" : ""}">retreat</span>`);
+  // The once-per-turn flags belong to a live decision; a replay has none to show.
+  const flags = !watch && view ? view.flags : null;
+  if (isMe && flags) {
+    out.push(`<span class="chip ${flags.energy ? "spent" : ""}">energy attach</span>`);
+    out.push(`<span class="chip ${flags.supporter ? "spent" : ""}">supporter</span>`);
+    out.push(`<span class="chip ${flags.stadium ? "spent" : ""}">stadium</span>`);
+    out.push(`<span class="chip ${flags.retreat ? "spent" : ""}">retreat</span>`);
   }
-  if (isMe) out.push(`<span class="chip">hand ${side.handCount}</span>`);
+  if (isMe || watch) out.push(`<span class="chip">hand ${side.handCount}</span>`);
   else out.push(`<span class="chip">hand &amp; prizes hidden</span>`);
   for (const c of side.conditions) out.push(`<span class="chip warn">${c}</span>`);
   return out.join("");
@@ -963,11 +975,13 @@ function statusLine() {
   if (!view) return "";
   if (!view.ready) return `waiting on ${view.waitingOn}`;
   if (view.finished && !replaying) return `Game over — ${view.verdict}`;
-  return `Turn ${view.turn} · you are player ${view.seat} · ` +
+  const who = view.pvp ? view.names.you : `player ${view.seat}`;
+  return `Turn ${view.turn} · you are ${who} · ` +
     (view.yourTurn ? "your move" : `waiting on ${view.waitingOn}`);
 }
 
 function render() {
+  if (watch) return;   // a replay owns the board; the live game redraws on close
   hideTip();  // a card can be replaced while hovered, and then no mouseleave fires
   if (!view || !view.ready) {
     $("status").textContent = statusLine();
@@ -979,7 +993,11 @@ function render() {
 
   $("agentName").textContent = view.agent ? `· ${view.agent}` : "";
   // Keep the picker on the opponent actually in play (page reloads, /api/state).
-  if (view.agent) chosenAgent = view.agent;
+  if (view.agent && !view.pvp) chosenAgent = view.agent;
+  // Two players: the nameplates carry the players' names instead of You/Opponent.
+  document.querySelector("#oppHalf .who").textContent = view.pvp ? view.names.opponent : "Opponent";
+  document.querySelector("#meHalf .who").textContent = view.pvp ? `${view.names.you} (you)` : "You";
+  if (view.pvp) $("agentName").textContent = "";
   $("status").textContent = statusLine();
 
   const events = view.events || [];
@@ -1035,7 +1053,12 @@ function drawBoard(board, handCards) {
   const oppHand = $("oppHand");
   oppHand.innerHTML = "";
   oppHand.appendChild(el("span", "label", `Hand ${board.opp.handCount}`));
-  for (let i = 0; i < board.opp.handCount; i++) oppHand.appendChild(el("div", "handback"));
+  if (Array.isArray(board.opp.hand) && board.opp.hand.length) {
+    // Only a replay sends the other hand: the game is over, nothing is hidden.
+    for (const c of board.opp.hand) oppHand.appendChild(cardEl(c, { extra: "mini-card" }));
+  } else {
+    for (let i = 0; i < board.opp.handCount; i++) oppHand.appendChild(el("div", "handback"));
+  }
   if (!board.opp.handCount) oppHand.appendChild(el("span", "hint", "empty"));
 
   $("meActive").innerHTML = "";
@@ -1097,7 +1120,8 @@ function renderChoice() {
     // arrive yet. Hold them until the turn has finished playing out.
     // A batch often ends with your own last action, so say whose turn is
     // actually being shown rather than always blaming the opponent.
-    $("prompt").textContent = replayingOpponent ? "Opponent is playing…" : "Replaying your move…";
+    const them = view && view.pvp ? view.names.opponent : "Opponent";
+    $("prompt").textContent = replayingOpponent ? `${them} is playing…` : "Replaying your move…";
     // No skip control on screen: a button here, or a click anywhere over the
     // board, is too easy to hit by accident — and losing the turn you were
     // waiting to watch is the one thing this must not do. The S key remains as
@@ -1111,7 +1135,7 @@ function renderChoice() {
     return;
   }
   if (!view.yourTurn) {
-    $("prompt").textContent = "Opponent is thinking…";
+    $("prompt").textContent = view && view.pvp ? `${view.names.opponent} is thinking…` : "Opponent is thinking…";
     $("choiceHint").textContent = "";
     return;
   }
@@ -1206,9 +1230,11 @@ async function submit(options) {
   if (busy) return;
   busy = true;
   announceOwnAbility(options);
-  $("status").textContent = "opponent thinking…";
+  $("status").textContent = pvp ? "sending…" : "opponent thinking…";
   try {
-    view = await api("/api/select", { options });
+    view = pvp
+      ? await api("/api/room/select", { room: pvp.room, options })
+      : await api("/api/select", { options });
   } catch (err) {
     busy = false;
     // The engine refuses some selections that pass the count check — an Energy
@@ -1255,12 +1281,507 @@ function renderLog(lines) {
   }
 }
 
+// -- two players --------------------------------------------------------------
+//
+// A room is an address, /?room=<id>, shared by both players. Who you are in it is
+// the token the server issued when you gave your name, kept per tab in
+// sessionStorage: a reload returns you to the same seat, and two tabs of one
+// browser can be the two players. The lobby and the game are both polled, since
+// the other player's actions reach this page only by asking.
+
+let pvp = null;              // {room, token} while this tab is in a room
+let joiningRoom = null;      // the room the name step will join (null: create one)
+let lobbyState = null;
+let lobbyTimer = null;
+let pvpTimer = null;
+let buildingForRoom = false; // the deck dialog is open on behalf of the lobby
+let lastSignature = "";
+const CUSTOM_DECK = "__custom__";
+
+const roomKey = (room) => `ptcg.room.${room}`;
+function roomToken(room) { try { return sessionStorage.getItem(roomKey(room)); } catch (e) { return null; } }
+function saveRoomToken(room, token) { try { sessionStorage.setItem(roomKey(room), token); } catch (e) { /* private window */ } }
+function roomFromUrl() { return new URLSearchParams(location.search).get("room"); }
+// Where the other player can reach this server. The page's own origin is wrong
+// when the host opened it on localhost and shares it through a tunnel, so the
+// server is asked first (PTCG_PUBLIC_URL, or the running ngrok agent's address).
+let publicBase = null;
+async function loadPublicBase() {
+  try { publicBase = (await api("/api/public-url")).url; } catch (e) { publicBase = null; }
+}
+function inviteUrl(room) {
+  const base = publicBase || `${location.origin}${location.pathname.replace(/\/$/, "")}`;
+  return `${base}/?room=${encodeURIComponent(room)}`;
+}
+
+function openMode() {
+  exitWatch();   // starting anything new leaves the replay
+  if (view) render();
+  $("modeView").hidden = false;
+}
+
+function openPvpName(room = null, host = "") {
+  joiningRoom = room;
+  $("modeView").hidden = true;
+  $("pvpView").hidden = false;
+  $("nameStep").hidden = false;
+  $("lobbyStep").hidden = true;
+  $("nameTitle").textContent = room ? `Join ${host}'s room` : "2 players";
+  $("nameHint").textContent = room
+    ? `${host} invited you to a game. Enter your name to join their lobby.`
+    : "Enter your name. You'll get an invitation link to send to the other player.";
+  $("nameGo").textContent = room ? "Join lobby" : "Create invitation link";
+  $("nameError").textContent = "";
+  let saved = "";
+  try { saved = localStorage.getItem("ptcg.name") || ""; } catch (e) { /* ignore */ }
+  $("playerName").value = saved;
+  $("playerName").focus();
+}
+
+async function submitName() {
+  const name = $("playerName").value.trim();
+  if (!name) { $("nameError").textContent = "Please enter a name."; return; }
+  try { localStorage.setItem("ptcg.name", name); } catch (e) { /* ignore */ }
+  $("nameGo").disabled = true;
+  let res;
+  try {
+    res = joiningRoom
+      ? await api("/api/room/join", { room: joiningRoom, name })
+      : await api("/api/room/create", { name });
+  } catch (err) {
+    $("nameError").textContent = err.message;
+    $("nameGo").disabled = false;
+    return;
+  }
+  $("nameGo").disabled = false;
+  saveRoomToken(res.room, res.token);
+  pvp = { room: res.room, token: res.token };
+  // Both players end up on the same address: the lobby is the room's own URL.
+  history.replaceState(null, "", `?room=${encodeURIComponent(res.room)}`);
+  showLobby(res.lobby);
+}
+
+function fillLobbyDecks(keep) {
+  const sel = $("lobbyDeck");
+  const current = keep ?? sel.value;
+  sel.innerHTML = "";
+  for (const deck of prebuilt) sel.appendChild(el("option", null, deck.name)).value = deck.name;
+  if (customDeck.length) {
+    sel.appendChild(el("option", null, `My deck (${customDeck.length} cards, from the deck builder)`)).value = CUSTOM_DECK;
+  }
+  if ([...sel.options].some((o) => o.value === current)) sel.value = current;
+}
+
+function showLobby(lobby) {
+  lobbyState = lobby;
+  if (lobby.status === "playing") { enterRoomGame(); return; }
+  $("pvpView").hidden = false;
+  $("nameStep").hidden = true;
+  $("lobbyStep").hidden = false;
+  $("inviteLink").value = inviteUrl(lobby.room);
+  if (!publicBase) loadPublicBase().then(() => { $("inviteLink").value = inviteUrl(lobby.room); });
+
+  const list = $("lobbyPlayers");
+  list.innerHTML = "";
+  for (let i = 0; i < 2; i++) {
+    const p = lobby.players[i];
+    if (!p) { list.appendChild(el("li", "empty", "<span>Waiting for the other player…</span>")); continue; }
+    const li = el("li");
+    const who = el("span");
+    who.textContent = `${p.name}${i === lobby.you ? " (you)" : ""}${p.host ? " · host" : ""}`;
+    const state = el("span", `state ${p.ready ? "ready" : ""}`);
+    state.textContent = p.ready ? `ready · ${p.deck}` : "choosing a deck";
+    li.append(who, state);
+    list.appendChild(li);
+  }
+  const me = lobby.players[lobby.you];
+  $("lobbyWait").textContent = !lobby.full
+    ? "You're in the lobby. Send the invitation link — the other player joins this same address."
+    : "Both players are here. Pick a deck and press Ready; the game starts when you're both ready.";
+  if (!$("lobbyDeck").options.length) fillLobbyDecks();
+  $("lobbyDeck").disabled = me.ready;
+  $("lobbyBuild").disabled = me.ready;
+  $("lobbyReady").disabled = false;
+  $("lobbyReady").textContent = me.ready ? "Not ready" : "Ready";
+  $("lobbyReady").classList.toggle("on", me.ready);
+  $("lobbyError").textContent = lobby.error || "";
+  if (!lobbyTimer) lobbyTimer = setInterval(pollLobby, 1500);
+}
+
+// One lobby request in flight at a time, each held open by the server until the
+// lobby changes: a long poll, so waiting costs a request per change, not per second.
+let lobbyInFlight = false;
+async function pollLobby() {
+  if (!pvp || $("lobbyStep").hidden || buildingForRoom || lobbyInFlight) return;
+  lobbyInFlight = true;
+  const room = pvp.room;
+  const since = lobbyState && lobbyState.tag ? `&since=${lobbyState.tag}` : "";
+  try {
+    const next = await api(`/api/room/lobby?room=${encodeURIComponent(room)}${since}`);
+    if (pvp && pvp.room === room && !buildingForRoom) showLobby(next);
+  } catch (err) {
+    if (pvp && pvp.room === room) roomClosed(err.message);
+  } finally {
+    lobbyInFlight = false;
+  }
+}
+
+async function toggleReady() {
+  const me = lobbyState.players[lobbyState.you];
+  const body = { room: pvp.room, ready: !me.ready };
+  if (!me.ready) {
+    const choice = $("lobbyDeck").value;
+    if (choice === CUSTOM_DECK) body.cards = customDeck;
+    else body.deck = choice;
+  }
+  $("lobbyReady").disabled = true;
+  try {
+    showLobby(await api("/api/room/ready", body));
+  } catch (err) {
+    $("lobbyError").textContent = err.message;
+    $("lobbyReady").disabled = false;
+  }
+}
+
+function buildForRoom() {
+  buildingForRoom = true;
+  $("pvpView").hidden = true;
+  $("startGame").textContent = "Use this deck";
+  openSetup();
+}
+
+/** The deck dialog was opened from the lobby: take its deck back there. */
+function useDeckForRoom() {
+  if (chosenDeck === null && customDeck.length !== 60) {
+    setStatus(`a deck needs 60 cards (${customDeck.length} so far)`, "bad");
+    return;
+  }
+  closeBuilderForRoom();
+  fillLobbyDecks(chosenDeck === null ? CUSTOM_DECK : chosenDeck);
+}
+
+function closeBuilderForRoom() {
+  buildingForRoom = false;
+  $("startGame").textContent = "Start game";
+  $("setupView").hidden = true;
+  $("pvpView").hidden = false;
+  if (lobbyState) showLobby(lobbyState);
+}
+
+function enterRoomGame() {
+  clearInterval(lobbyTimer); lobbyTimer = null;
+  $("pvpView").hidden = true;
+  $("modeView").hidden = true;
+  $("setupView").hidden = true;
+  const names = (lobbyState && lobbyState.players.map((p) => p.name)) || [];
+  $("loadout").textContent = names.length === 2 ? `${names[0]} vs ${names[1]}` : "2 players";
+  lastSignature = "";
+  if (!pvpTimer) pvpTimer = setInterval(pollRoomGame, 1200);
+  pollRoomGame(true);
+}
+
+/** What the board looks like, so an unchanged poll does not redraw the page. */
+function signature(v) {
+  return JSON.stringify([v.turn, v.actions, v.yourTurn, v.finished, v.me, v.opp, v.stadium, v.options.length]);
+}
+
+let gameInFlight = false;
+async function pollRoomGame(force = false) {
+  if (!pvp || busy || replaying || gameInFlight || watch) return;
+  if (!force && view && view.pvp && (view.yourTurn || view.finished)) return;
+  // While the other player is deciding, ask the server to hold the request until
+  // the game moves past the version on screen (a long poll).
+  const since = !force && view && view.pvp ? `&since=${view.version}` : "";
+  const room = pvp.room;
+  let next;
+  gameInFlight = true;
+  try {
+    next = await api(`/api/room/state?room=${encodeURIComponent(room)}${since}`);
+  } catch (err) {
+    if (pvp && pvp.room === room) roomClosed(err.message);
+    return;
+  } finally {
+    gameInFlight = false;
+  }
+  if (!pvp || pvp.room !== room || busy) return;
+  const sig = signature(next);
+  if (!force && sig === lastSignature && !(next.events || []).length) return;
+  lastSignature = sig;
+  view = next;
+  picked = [];
+  render();
+}
+
+function leaveRoomLocally() {
+  clearInterval(lobbyTimer); lobbyTimer = null;
+  clearInterval(pvpTimer); pvpTimer = null;
+  if (pvp) { try { sessionStorage.removeItem(roomKey(pvp.room)); } catch (e) { /* ignore */ } }
+  pvp = null;
+  lobbyState = null;
+  $("lobbyDeck").innerHTML = "";
+  history.replaceState(null, "", location.pathname);
+}
+
+async function leaveRoom() {
+  if (pvp) {
+    try { await api("/api/room/leave", { room: pvp.room }); } catch (e) { /* already gone */ }
+  }
+  leaveRoomLocally();
+  $("pvpView").hidden = true;
+  view = null;
+  $("prompt").textContent = "No game in progress";
+  $("options").innerHTML = "";
+  $("status").textContent = "";
+  $("loadout").textContent = "";
+  openMode();
+}
+
+function roomClosed(message) {
+  leaveRoomLocally();
+  $("pvpView").hidden = true;
+  $("status").textContent = `room closed: ${message}`;
+  openMode();
+}
+
+/** On load: a room link either returns you to your seat or asks your name. */
+async function resumeRoom(room) {
+  const token = roomToken(room);
+  if (token) {
+    pvp = { room, token };
+    try {
+      showLobby(await api(`/api/room/lobby?room=${encodeURIComponent(room)}`));
+      return;
+    } catch (err) {
+      pvp = null;   // a stale token: fall through and ask for a name again
+    }
+  }
+  let info;
+  try {
+    info = await api(`/api/room/info?room=${encodeURIComponent(room)}`);
+  } catch (err) {
+    history.replaceState(null, "", location.pathname);
+    $("status").textContent = `that room is closed: ${err.message}`;
+    openMode();
+    return;
+  }
+  if (info.full) {
+    history.replaceState(null, "", location.pathname);
+    $("status").textContent = `${info.host}'s room already has two players`;
+    openMode();
+    return;
+  }
+  openPvpName(room, info.host);
+}
+
+// -- watch replays -------------------------------------------------------------
+//
+// A saved game (replays/, written by replay_log.py) comes back as one board per
+// decision, seen from the seat chosen under "View as", with both hands face up.
+// Left/Right step one decision; Play walks forward on its own, at the replay
+// speed picked in the header, animating each move the way a live turn is.
+
+let watch = null;   // {file, seat, data, i, playing, lines} while a replay is shown
+let watchToken = 0; // bumped to cancel an animation or an autoplay in progress
+
+async function openReplayList() {
+  $("modeView").hidden = true;
+  $("replayListView").hidden = false;
+  const box = $("replayList");
+  box.innerHTML = "";
+  $("replayListHint").textContent = "loading…";
+  let list;
+  try {
+    list = (await api("/api/replays")).replays;
+  } catch (err) {
+    $("replayListHint").textContent = `could not list replays: ${err.message}`;
+    return;
+  }
+  $("replayListHint").textContent = list.length
+    ? `${list.length} saved game${list.length === 1 ? "" : "s"} — click one to watch it`
+    : "No saved games yet. Every game you finish (or leave) here is saved to replays/.";
+  for (const r of list) {
+    const row = el("button", "replayRow");
+    const when = new Date(r.started * 1000);
+    const who = r.names.map((n) => (n === r.winner ? `<span class="won">${esc(n)} ★</span>` : esc(n))).join(" vs ");
+    const mode = { pvp: "2 players", vs_agent: "vs AI", kaggle: "Kaggle" }[r.mode] || r.mode;
+    row.innerHTML = `<span class="when">${when.toLocaleString()}</span><span class="who">${who}</span>` +
+      `<span class="meta">${mode}${r.finished ? "" : " · unfinished"}</span>`;
+    row.addEventListener("click", () => startWatching(r.file, 0));
+    box.appendChild(row);
+  }
+}
+
+function esc(text) {
+  return String(text).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+async function startWatching(file, seat) {
+  stopAutoplay();
+  $("replayListView").hidden = true;
+  $("status").textContent = "loading replay…";
+  let data;
+  try {
+    data = await api(`/api/replays/view?file=${encodeURIComponent(file)}&seat=${seat}`);
+  } catch (err) {
+    $("status").textContent = `could not open replay: ${err.message}`;
+    return;
+  }
+  // Keep the position when only the point of view changed.
+  const keep = watch && watch.file === file ? watch.i : 0;
+  // The log is cumulative: where each frame's lines end in the whole game's log.
+  const lines = [];
+  const ends = data.frames.map((f) => { lines.push(...f.lines); return lines.length; });
+  watch = { file, seat, data, lines, ends, i: Math.min(keep, data.frames.length - 1), playing: false };
+  $("choice").hidden = true;
+  $("replayPanel").hidden = false;
+  $("rpTitle").textContent = `Replay · ${data.names[0]} vs ${data.names[1]}`;
+  const sel = $("rpSeat");
+  sel.innerHTML = "";
+  data.names.forEach((n, i) => { sel.appendChild(el("option", null, esc(n))).value = String(i); });
+  sel.value = String(seat);
+  $("rpSeek").max = String(Math.max(0, data.frames.length - 1));
+  $("loadout").textContent = `replay: ${data.names[0]} vs ${data.names[1]}`;
+  showFrame(watch.i, false);
+}
+
+/** Draw decision ``i``; with ``animate``, play its events first, as a live turn does. */
+async function showFrame(i, animate) {
+  if (!watch) return;
+  const token = ++watchToken;
+  const frames = watch.data.frames;
+  watch.i = Math.max(0, Math.min(i, frames.length - 1));
+  const frame = frames[watch.i];
+  const names = watch.data.names;
+  document.querySelector("#oppHalf .who").textContent = names[1 - watch.seat];
+  document.querySelector("#meHalf .who").textContent = names[watch.seat];
+  $("agentName").textContent = "";
+  targets = new Map();
+  picked = [];
+  updateReplayPanel();
+  renderLog(watch.lines.slice(0, watch.ends[watch.i]).slice(-400));
+  if (animate && frame.events.length) {
+    const scale = speedFactor();
+    for (const ev of mergeEvents(frame.events)) {
+      if (token !== watchToken || !watch) return;
+      await playEvent(ev, scale);
+    }
+    if (token !== watchToken || !watch) return;
+  }
+  $("stage").innerHTML = "";
+  drawBoard(frame.board, frame.board.me.hand);
+}
+
+function updateReplayPanel() {
+  const frames = watch.data.frames;
+  const frame = frames[watch.i];
+  const n = frames.length;
+  $("rpSeek").value = String(watch.i);
+  $("rpPos").textContent = `Decision ${watch.i + 1} / ${n} · turn ${frame.board.turn}`;
+  const who = frame.mover ? `<b>${esc(frame.mover)}</b>: ` : "";
+  let verdict = "";
+  if (frame.result !== -1) {
+    verdict = frame.result === 2 ? "<br>Game over — draw"
+      : `<br>Game over — <b>${esc(watch.data.names[frame.result])}</b> wins`;
+  }
+  $("rpDecision").innerHTML = who + esc(frame.decision) + verdict;
+  $("rpPrev").disabled = watch.i === 0;
+  $("rpNext").disabled = watch.i >= n - 1;
+  $("rpPlay").disabled = watch.playing || watch.i >= n - 1;
+  $("rpPause").disabled = !watch.playing;
+  $("status").textContent = watch.playing ? "replay playing" : "replay paused";
+}
+
+function stepReplay(delta) {
+  if (!watch) return;
+  stopAutoplay();
+  const next = watch.i + delta;
+  if (next < 0 || next >= watch.data.frames.length) return;
+  // Forward animates the move; backward just shows the earlier position.
+  showFrame(next, delta === 1);
+}
+
+async function playReplay() {
+  if (!watch || watch.playing) return;
+  watch.playing = true;
+  updateReplayPanel();
+  while (watch && watch.playing && watch.i < watch.data.frames.length - 1) {
+    await showFrame(watch.i + 1, true);
+    if (!watch || !watch.playing) break;
+    await pause(Math.round(900 * speedFactor()));
+  }
+  if (watch) { watch.playing = false; updateReplayPanel(); }
+}
+
+function stopAutoplay() {
+  if (watch && watch.playing) {
+    watch.playing = false;
+    watchToken++;          // cut the move being animated short
+    $("stage").innerHTML = "";
+    showFrame(watch.i, false);
+  }
+}
+
+function pauseReplay() { stopAutoplay(); if (watch) updateReplayPanel(); }
+
+/** Leave the replay and give the board back to the live game, if there is one. */
+function exitWatch() {
+  if (!watch) return;
+  stopAutoplay();
+  watch = null;
+  watchToken++;
+  $("stage").innerHTML = "";
+  $("replayPanel").hidden = true;
+  $("choice").hidden = false;
+  $("loadout").textContent = "";
+}
+
+function closeReplay() {
+  exitWatch();
+  if (view) { render(); return; }
+  $("prompt").textContent = "No game in progress";
+  $("status").textContent = "";
+  renderLog([]);
+  openMode();
+}
+
 // -- wiring -----------------------------------------------------------------
 
 $("speed").value = localStorage.getItem("animSpeed") || "normal";
 $("speed").addEventListener("change", (ev) => localStorage.setItem("animSpeed", ev.target.value));
-$("newGame").addEventListener("click", openSetup);
-$("setupClose").addEventListener("click", () => { $("setupView").hidden = true; });
+$("newGame").addEventListener("click", openMode);
+$("modeAgent").addEventListener("click", () => { $("modeView").hidden = true; openSetup(); });
+$("modeFriend").addEventListener("click", () => openPvpName(null));
+$("modeReplays").addEventListener("click", openReplayList);
+$("replayListClose").addEventListener("click", () => { $("replayListView").hidden = true; if (!watch && !view) openMode(); });
+$("rpPrev").addEventListener("click", () => stepReplay(-1));
+$("rpNext").addEventListener("click", () => stepReplay(1));
+$("rpPlay").addEventListener("click", playReplay);
+$("rpPause").addEventListener("click", pauseReplay);
+$("rpClose").addEventListener("click", closeReplay);
+$("rpSeat").addEventListener("change", (ev) => { if (watch) startWatching(watch.file, Number(ev.target.value)); });
+$("rpSeek").addEventListener("input", (ev) => { if (watch) { stopAutoplay(); showFrame(Number(ev.target.value), false); } });
+$("modeClose").addEventListener("click", () => { $("modeView").hidden = true; });
+$("nameGo").addEventListener("click", submitName);
+$("playerName").addEventListener("keydown", (ev) => { if (ev.key === "Enter") submitName(); });
+$("nameCancel").addEventListener("click", () => {
+  $("pvpView").hidden = true;
+  if (joiningRoom) history.replaceState(null, "", location.pathname);
+  openMode();
+});
+$("copyInvite").addEventListener("click", () => {
+  const link = $("inviteLink");
+  link.select();
+  navigator.clipboard?.writeText(link.value);
+  $("copyInvite").textContent = "Copied";
+  setTimeout(() => { $("copyInvite").textContent = "Copy"; }, 1500);
+});
+$("lobbyReady").addEventListener("click", toggleReady);
+$("lobbyBuild").addEventListener("click", buildForRoom);
+$("lobbyLeave").addEventListener("click", leaveRoom);
+$("setupClose").addEventListener("click", () => {
+  if (buildingForRoom) { closeBuilderForRoom(); return; }
+  $("setupView").hidden = true;
+});
 $("startGame").addEventListener("click", startGame);
 $("search").addEventListener("input", runSearch);
 $("kindFilter").addEventListener("change", runSearch);
@@ -1292,6 +1813,12 @@ $("importDeck").addEventListener("click", () => {
 });
 
 document.addEventListener("keydown", (ev) => {
+  // Replay keys: Left/Right step a decision, Space plays or pauses.
+  if (watch && !ev.metaKey && !ev.ctrlKey && !ev.altKey && !/INPUT|SELECT|TEXTAREA/.test(ev.target.tagName)) {
+    if (ev.key === "ArrowLeft") { ev.preventDefault(); stepReplay(-1); return; }
+    if (ev.key === "ArrowRight") { ev.preventDefault(); stepReplay(1); return; }
+    if (ev.key === " ") { ev.preventDefault(); if (watch.playing) pauseReplay(); else playReplay(); return; }
+  }
   if ((ev.key === "s" || ev.key === "S") && replaying && !ev.metaKey && !ev.ctrlKey) skipReplay();
 });
 $("pileClose").addEventListener("click", () => { $("pileView").hidden = true; });
@@ -1306,10 +1833,13 @@ api("/api/version").then((v) => {
 }).catch(() => {});
 
 loadConfig().then(async () => {
+  await loadPublicBase();
+  const room = roomFromUrl();
+  if (room) { await resumeRoom(room); return; }
   try {
     view = await api("/api/state");
     render();
   } catch {
-    openSetup();  // nothing in progress: start by choosing a deck
+    openMode();  // nothing in progress: start by choosing who to play
   }
 });

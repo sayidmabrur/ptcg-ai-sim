@@ -70,6 +70,21 @@
       <div id="options"></div>
       <button id="confirm" hidden>Confirm</button>
     </section>
+    <!-- Replay controls: shown in place of the choice panel while watching. -->
+    <section id="replayPanel" hidden>
+      <h2 id="rpTitle">Replay</h2>
+      <label class="rpSeat">View as <select id="rpSeat"></select></label>
+      <div class="rpControls">
+        <button id="rpPrev" title="Previous decision (Left arrow)">&larr;</button>
+        <button id="rpPlay" title="Play (Space)">&#9654; Play</button>
+        <button id="rpPause" title="Pause (Space)">&#10074;&#10074; Pause</button>
+        <button id="rpNext" title="Next decision (Right arrow)">&rarr;</button>
+      </div>
+      <input id="rpSeek" type="range" min="0" max="0" value="0">
+      <p id="rpPos" class="rpPos"></p>
+      <p id="rpDecision" class="rpDecision"></p>
+      <button id="rpClose" class="ghost">Close replay</button>
+    </section>
     <section id="logPanel">
       <h2>Log</h2>
       <div id="log"></div>
@@ -137,6 +152,57 @@
   </div>
 </div></div>
 
+
+<!-- New game: first choose who you play against. -->
+<div id="modeView" class="modal" hidden><div class="modalInner modeInner">
+  <h2>New game</h2>
+  <button id="modeAgent" class="modeBtn"><b>Play vs AI</b><span>a trained RL agent pilots the other seat</span></button>
+  <button id="modeFriend" class="modeBtn"><b>2 players</b><span>invite a friend with a link and play each other</span></button>
+  <button id="modeReplays" class="modeBtn"><b>Watch replays</b><span>step through a saved game, one decision at a time</span></button>
+  <button id="modeClose" class="ghost">Cancel</button>
+</div></div>
+
+<!-- Two players: name first, then the lobby both players share at /?room=<id>. -->
+<div id="pvpView" class="modal" hidden><div class="modalInner pvpInner">
+  <div id="nameStep">
+    <h2 id="nameTitle">2 players</h2>
+    <p id="nameHint" class="hint"></p>
+    <label for="playerName">Your name</label>
+    <input id="playerName" maxlength="24" autocomplete="nickname" placeholder="e.g. Ash">
+    <p id="nameError" class="err"></p>
+    <div class="row">
+      <button id="nameGo">Create invitation link</button>
+      <button id="nameCancel" class="ghost">Cancel</button>
+    </div>
+  </div>
+  <div id="lobbyStep" hidden>
+    <h2>Lobby</h2>
+    <div id="inviteBox">
+      <label for="inviteLink">Invitation link — send this to the other player</label>
+      <div class="row"><input id="inviteLink" readonly><button id="copyInvite">Copy</button></div>
+    </div>
+    <ul id="lobbyPlayers" class="lobbyPlayers"></ul>
+    <p id="lobbyWait" class="hint"></p>
+    <label for="lobbyDeck">Your deck</label>
+    <div class="row">
+      <select id="lobbyDeck"></select>
+      <button id="lobbyBuild" class="ghost">Build a deck…</button>
+    </div>
+    <p id="lobbyError" class="err"></p>
+    <div class="row">
+      <button id="lobbyReady" disabled>Ready</button>
+      <button id="lobbyLeave" class="ghost">Leave room</button>
+    </div>
+  </div>
+</div></div>
+
+<!-- Watch replays: the saved games (replays/), newest first. -->
+<div id="replayListView" class="modal" hidden><div class="modalInner replayListInner">
+  <h2>Watch replays</h2>
+  <p id="replayListHint" class="hint"></p>
+  <div id="replayList" class="replayList"></div>
+  <div class="row"><button id="replayListClose" class="ghost">Close</button></div>
+</div></div>
 
 <div id="pileView" hidden><div class="pileInner"><h2 id="pileTitle"></h2><div id="pileCards"></div><button id="pileClose">Close</button></div></div>
 <script src="/static/app.js"></script>

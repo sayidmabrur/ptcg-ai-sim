@@ -46,3 +46,6 @@ __pycache__/
 
 # WSL leaves these behind next to files copied from Windows.
 *Zone.Identifier
+simulator/.image_cache/
+# Battle logs the simulator writes (replay_log.py).
+simulator/replays/

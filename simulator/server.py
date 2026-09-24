@@ -22,6 +22,14 @@ deck and prizes erased. ``Battle`` keeps the human's observation and discards
 the agent's, so the payload the client renders cannot contain the agent's hand,
 deck order or prize identities -- there is no client-side hiding to defeat.
 
+*Two players share a room.* ``/api/room/*`` (``rooms.py``) runs a lobby at
+``/?room=<id>``: the host names themselves and gets an invitation link, the
+guest names themselves and lands on the same address, and once both have picked
+a deck the room starts one worker holding a ``PvpBattle``. Each request is
+mapped to its seat from the player's ``X-Player`` token, and each seat is only
+ever shown its own observation, or the other seat's with the private parts
+removed.
+
 *The agent moves inside the request.* A checkpoint forward is milliseconds and
 a whole agent turn is well under a second, so ``/api/select`` simply returns the
 next position the human has to act on.
@@ -30,8 +38,12 @@ next position the human has to act on.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import sys
+import time
+import urllib.request
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -47,6 +59,8 @@ if str(_HERE) not in sys.path:
 import opponents as agent_lib  # noqa: E402
 import engine  # noqa: E402
 import render  # noqa: E402
+import replay_view  # noqa: E402
+import rooms  # noqa: E402
 import sessions  # noqa: E402
 
 @asynccontextmanager
@@ -59,9 +73,16 @@ async def _lifespan(_app: FastAPI):
     """
     yield
     sessions.registry.close_all()
+    rooms.registry.close_all()
 
 
 app = FastAPI(title="PTCG player-vs-agent simulator", lifespan=_lifespan)
+
+# A replay is a board per decision: ~2 MB of JSON for a long game, ~90 KB
+# gzipped. Worth it anywhere, and essential through a metered tunnel.
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+
+app.add_middleware(GZipMiddleware, minimum_size=4096)
 
 # The header the page identifies itself with. Not a cookie: the Space is usually
 # viewed in an iframe on huggingface.co, where the Space's own cookies are
@@ -74,6 +95,7 @@ class NewGame(BaseModel):
     humanDeck: str | None = None      # a prebuilt decklist by name...
     humanCards: list[int] | None = None  # ...or 60 card ids built in the browser
     seat: int = -1                    # -1 picks at random
+    playerName: str | None = None     # names the saved replay file
 
 
 class Choice(BaseModel):
@@ -228,6 +250,256 @@ def leave(x_session: str | None = Header(default=None)) -> dict:
     return {"ok": True}
 
 
+# -- two players -------------------------------------------------------------
+#
+# The room is the page (``/?room=<id>``) and the player is a token the server
+# issued when they gave their name, sent back as ``X-Player``. Every request is
+# resolved to a seat here, from the token, before it reaches the room's worker.
+
+PLAYER_HEADER = "X-Player"
+
+
+class RoomName(BaseModel):
+    name: str
+
+
+class RoomJoin(BaseModel):
+    room: str
+    name: str
+
+
+class RoomReady(BaseModel):
+    room: str
+    ready: bool = True
+    deck: str | None = None           # a prebuilt decklist by name...
+    cards: list[int] | None = None    # ...or 60 card ids built in the browser
+
+
+class RoomRef(BaseModel):
+    room: str
+
+
+class RoomChoice(BaseModel):
+    room: str
+    options: list[int]
+
+
+def _room_call(fn):
+    try:
+        return fn()
+    except rooms.RoomError as exc:
+        raise HTTPException(exc.status, exc.detail) from exc
+    except sessions.SessionGone as exc:
+        raise HTTPException(409, f"the game ended unexpectedly: {exc}") from exc
+
+
+def _room_game_raw(room: rooms.Room, token: str | None, op: str) -> dict:
+    me = room.player(token)
+    if room.worker is None or me.seat is None:
+        raise rooms.RoomError(409, "the game has not started")
+    reply = room.worker.request(op, {"seat": me.seat})
+    if not reply.get("ok"):
+        raise rooms.RoomError(reply.get("status", 500), reply.get("detail", "game error"))
+    return reply["view"]
+
+
+def _room_game(room: rooms.Room, token: str | None, op: str, payload: dict) -> dict:
+    me = room.player(token)
+    if room.worker is None or me.seat is None:
+        raise rooms.RoomError(409, "the game has not started")
+    reply = room.worker.request(op, dict(payload, seat=me.seat))
+    if not reply.get("ok"):
+        raise rooms.RoomError(reply.get("status", 500), reply.get("detail", "game error"))
+    view = reply["view"]
+    view["room"] = room.id
+    return view
+
+
+@app.post("/api/room/create")
+def room_create(request: RoomName) -> dict:
+    """Open a room; the caller is its host and is sent to its lobby."""
+    def run():
+        room, me = rooms.registry.create(request.name)
+        return {"room": room.id, "token": me.token, "lobby": room.lobby(me)}
+    return _room_call(run)
+
+
+@app.post("/api/room/join")
+def room_join(request: RoomJoin) -> dict:
+    """Take the second seat in a room, from the link its host sent."""
+    def run():
+        room, me = rooms.registry.join(request.room, request.name)
+        return {"room": room.id, "token": me.token, "lobby": room.lobby(me)}
+    return _room_call(run)
+
+
+@app.get("/api/room/info")
+def room_info(room: str) -> dict:
+    """Before joining: does the room exist, who is hosting, is there a seat."""
+    def run():
+        r = rooms.registry.get(room)
+        return {"room": r.id, "host": r.players[0].name, "full": len(r.players) == 2,
+                "status": r.status}
+    return _room_call(run)
+
+
+# How long a poll may be held open waiting for something to change. Long polls
+# are what make the game affordable through a metered tunnel (ngrok's free plan
+# counts every request): a waiting player costs one request per change, or one
+# per LONG_POLL seconds when nothing happens, instead of one a second.
+LONG_POLL = float(os.environ.get("PTCG_LONG_POLL", "25"))
+POLL_STEP = 0.3
+
+
+def _lobby_with_tag(r: rooms.Room, me: rooms.Player) -> dict:
+    lobby = r.lobby(me)
+    lobby["tag"] = hashlib.sha1(json.dumps(lobby, sort_keys=True).encode()).hexdigest()[:12]
+    return lobby
+
+
+@app.get("/api/room/lobby")
+def room_lobby(room: str, since: str | None = None,
+               x_player: str | None = Header(default=None)) -> dict:
+    """The lobby; with ``since``, held until it differs from that tag."""
+    def run():
+        r = rooms.registry.get(room)
+        me = r.player(x_player)
+        deadline = time.monotonic() + (LONG_POLL if since else 0)
+        while True:
+            lobby = _lobby_with_tag(r, me)
+            if lobby["tag"] != since or time.monotonic() >= deadline:
+                return lobby
+            time.sleep(POLL_STEP)
+            r = rooms.registry.get(room)   # keeps the room from idling out, and fails if it closed
+    return _room_call(run)
+
+
+@app.post("/api/room/ready")
+def room_ready(request: RoomReady, x_player: str | None = Header(default=None)) -> dict:
+    """Pick a deck and say you are ready; the game starts once both have."""
+    def run():
+        r = rooms.registry.get(request.room)
+        with r.lock:
+            me = r.player(x_player)
+            if r.status != "lobby":
+                raise rooms.RoomError(409, "the game has already started")
+            if request.ready:
+                if request.cards is not None:
+                    deck = [int(c) for c in request.cards]
+                    label = "own deck"
+                elif request.deck is not None:
+                    try:
+                        deck = engine.deck_by_name(request.deck)
+                    except KeyError as exc:
+                        raise rooms.RoomError(400, f"unknown deck {exc}") from exc
+                    label = request.deck
+                else:
+                    raise rooms.RoomError(400, "choose a deck first")
+                problems = engine.deck_check(deck, render.card_db())
+                if problems:
+                    raise rooms.RoomError(400, "illegal deck: " + "; ".join(problems))
+                me.deck, me.deck_label, me.ready = deck, label, True
+            else:
+                me.ready = False
+            r.error = ""
+            if len(r.players) == 2 and all(p.ready for p in r.players):
+                try:
+                    r.start()
+                except (rooms.RoomError, RuntimeError, OSError) as exc:
+                    for p in r.players:
+                        p.ready = False
+                    r.error = getattr(exc, "detail", str(exc))
+            return _lobby_with_tag(r, me)
+    return _room_call(run)
+
+
+@app.get("/api/room/state")
+def room_state(room: str, since: int | None = None,
+               x_player: str | None = Header(default=None)) -> dict:
+    """This seat's view; with ``since``, held until the game moves past that version."""
+    def run():
+        r = rooms.registry.get(room)
+        if since is not None:
+            deadline = time.monotonic() + LONG_POLL
+            while time.monotonic() < deadline:
+                probe = _room_game_raw(r, x_player, "pvp_version")
+                if probe["version"] != since:
+                    break
+                time.sleep(POLL_STEP)
+                r = rooms.registry.get(room)
+        return _room_game(r, x_player, "pvp_state", {})
+    return _room_call(run)
+
+
+@app.post("/api/room/select")
+def room_select(choice: RoomChoice, x_player: str | None = Header(default=None)) -> dict:
+    return _room_call(lambda: _room_game(rooms.registry.get(choice.room), x_player,
+                                         "pvp_select", {"options": choice.options}))
+
+
+@app.post("/api/room/leave")
+def room_leave(request: RoomRef, x_player: str | None = Header(default=None)) -> dict:
+    """Leave a room. The host leaving, or anyone leaving a game, closes it."""
+    def run():
+        r = rooms.registry.get(request.room)
+        me = r.player(x_player)
+        if r.status == "lobby" and me is not r.players[0]:
+            with r.lock:
+                r.players.remove(me)
+                for p in r.players:
+                    p.ready = False
+        else:
+            rooms.registry.drop(r.id)
+        return {"ok": True}
+    return _room_call(run)
+
+
+def _ngrok_url() -> str | None:
+    """The public https address of a local ngrok agent, if one is running.
+
+    ngrok's agent answers on 127.0.0.1:4040 with the tunnels it holds. Asking it
+    means the invitation link is right even when the host opened the page on
+    localhost -- a link to localhost would take the guest to their own machine.
+    """
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=0.5) as r:
+            tunnels = json.loads(r.read()).get("tunnels", [])
+    except (OSError, ValueError):
+        return None
+    for t in tunnels:
+        if str(t.get("public_url", "")).startswith("https://"):
+            return t["public_url"]
+    return None
+
+
+@app.get("/api/public-url")
+def public_url() -> dict:
+    """Where a guest can reach this server: PTCG_PUBLIC_URL, else ngrok, else unknown."""
+    url = os.environ.get("PTCG_PUBLIC_URL") or _ngrok_url()
+    return {"url": url.rstrip("/") if url else None}
+
+
+@app.get("/api/replays")
+def replays() -> dict:
+    """Saved games, newest first (``replays/``, see replay_log.py)."""
+    return {"replays": replay_view.listing()}
+
+
+@app.get("/api/replays/view")
+def replay(file: str, seat: int = 0) -> dict:
+    """One saved game as a board per decision, seen from ``seat``, both hands shown."""
+    if seat not in (0, 1):
+        raise HTTPException(400, "seat must be 0 or 1")
+    try:
+        path = replay_view.resolve(file)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "no such replay") from exc
+    try:
+        return replay_view.frames(path, seat)
+    except (OSError, ValueError, KeyError, IndexError) as exc:
+        raise HTTPException(422, f"cannot read this replay: {type(exc).__name__}: {exc}") from exc
+
+
 @app.get("/api/sessions")
 def session_stats() -> dict:
     """How many games this server is running, and how many it will run."""
@@ -287,7 +559,29 @@ app.mount("/static", _FreshStatic(directory=_HERE / "static"), name="static")
 
 # Card art, one file per card id. Served straight off disk: the files are large
 # (a few hundred KB each) and never change, so the browser cache does the work.
-if render.IMAGE_DIR.is_dir():
+#
+# PTCG_LIGHT_IMAGES=1 serves lossy copies instead (about a tenth of the size),
+# made on first request and kept in .image_cache/. That is for a metered tunnel:
+# the lossless scans are ~700 KB each, and ngrok's free plan allows 1 GB a month.
+LIGHT_IMAGES = os.environ.get("PTCG_LIGHT_IMAGES", "") not in ("", "0", "false")
+LIGHT_DIR = _HERE / ".image_cache"
+
+if LIGHT_IMAGES and render.IMAGE_DIR.is_dir():
+    from fastapi.responses import FileResponse
+
+    @app.get("/cards/{name}")
+    def light_card(name: str) -> FileResponse:
+        source = render.IMAGE_DIR / Path(name).name
+        if not source.is_file():
+            raise HTTPException(404, "no such card image")
+        target = LIGHT_DIR / (source.stem + ".webp")
+        if not target.is_file() or target.stat().st_mtime < source.stat().st_mtime:
+            from PIL import Image
+            LIGHT_DIR.mkdir(exist_ok=True)
+            Image.open(source).convert("RGB").save(target, format="WEBP", quality=80, method=4)
+        return FileResponse(target, media_type="image/webp",
+                            headers={"Cache-Control": "public, max-age=604800"})
+elif render.IMAGE_DIR.is_dir():
     app.mount("/cards", StaticFiles(directory=render.IMAGE_DIR), name="cards")
 
 
