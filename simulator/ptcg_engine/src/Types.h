@@ -237,6 +237,7 @@ enum class EffectType : unsigned char {
 	NoDamageEnemyAbilityPokemonAttack, // 相手の特性を持つポケモンからワザのダメージを受けない
 	NoDamageEnemyExAttack, // 相手の「ポケモン【ex】」からワザのダメージを受けない
 	NoDamageEnemyBasicExAttack, // 相手の【たね】ポケモンの「ポケモン【ex】」からワザのダメージを受けない
+	NoDamageEnemyLessEqualEnergy2Attack, // ついているエネルギーが2個以下の相手のポケモンからワザのダメージを受けない (local: Bastiodon PBL 62)
 	NoDamageAndEffectEnemyTerastalAttack, // 相手の「テラスタル」のポケモンからワザのダメージや効果を受けない
 	NoDamageAndEffectEnemySpecialEnergyAttack, // 特殊エネルギーがついている相手のポケモンから、ワザのダメージや効果を受けない
 	NoEffectEnemyAttack, // 相手のポケモンが使うワザの効果を受けない

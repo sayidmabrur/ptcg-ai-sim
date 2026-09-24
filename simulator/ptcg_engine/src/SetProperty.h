@@ -400,6 +400,11 @@ inline int CalcDamage(const State& state, int baseDamage, CardRef targetRef, con
 					damage = 0;
 				}
 			}
+			if (target.noDamageEnemyLessEqualEnergy2Attack) {
+				if (state.energyCount(attacker.playerIndex, attackerRef) <= 2) {
+					damage = 0;
+				}
+			}
 			if (target.noDamageAndEffectEnemyTerastalAttack) {
 				if (attackerMaster.tera) {
 					damage = 0;

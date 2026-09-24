@@ -208,6 +208,12 @@ inline void EffectContinual(State& state, const Effect& effect, const std::vecto
 			card.noDamageEnemyBasicExAttack = true;
 		}
 		break;
+	case EffectType::NoDamageEnemyLessEqualEnergy2Attack:
+		for (const AreaRef& ref : targetList) {
+			Card& card = state.getCard(ref.card);
+			card.noDamageEnemyLessEqualEnergy2Attack = true;
+		}
+		break;
 	case EffectType::NoDamageAndEffectEnemyTerastalAttack:
 		for (const AreaRef& ref : targetList) {
 			Card& card = state.getCard(ref.card);

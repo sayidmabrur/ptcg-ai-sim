@@ -285,6 +285,7 @@ struct Card {
 			bool noDamageEnemyAbilityPokemonAttack : 1;
 			bool noDamageEnemyExAttack : 1;
 			bool noDamageEnemyBasicExAttack : 1;
+			bool noDamageEnemyLessEqualEnergy2Attack : 1;
 			bool noDamageAndEffectEnemyTerastalAttack : 1;
 			bool noDamageAndEffectEnemySpecialEnergyAttack : 1;
 			bool noDamageEnemyAttack : 1;
