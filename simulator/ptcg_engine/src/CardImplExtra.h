@@ -33,8 +33,9 @@
 // 30th Celebration (30C, Sep 2026) follows at card 1660-1774: its 115 new
 // cards (Poké Pad, Switch and Ultra Ball are reprints of pool cards). Left out
 // for the same reason: Alolan Exeggutor (2), Illumise (4), Pikachu Overwriting
-// Bolt (40), Mew ex (66), Seismitoad (84), Yveltal (100), Ditto (115), Snorlax
-// (119), and Maushold (125), whose Tandemaus is not in the pool.
+// Bolt (40), Seismitoad (84), Yveltal (100), Ditto (115), Snorlax (119), and
+// Maushold (125), whose Tandemaus is not in the pool. Mew ex (66) was on that
+// list until Memory Helix was added to the engine; it is card 1775, on the end.
 //
 // 1500-1502 predate the 2026 block: this Shieldon/Bastiodon pair is a Basic ->
 // Stage 1 line with Bench Shield, not the Pitch Black fossil line (1506/1507).
@@ -3096,5 +3097,30 @@ inline void CardImplExtra() {
 		.textEn(u8"Shoot Meteors", u8"Discard all Energy from this Pokémon, and this attack does 120 damage to 1 of your opponent’s Pokémon. (Don’t apply Weakness and Resistance for Benched Pokémon.)")
 		.postEffect(ToTrash, Me).targetAttachedEnergy().targetCondition(TargetType::AttachedMe)
 		.postEffectDamagePokemon(120);
+
+	// Out of set order: Mew ex belongs with Mewtwo/Mew at 1720-1721, but the
+	// card ids are the wire format the agent and the saved replays are keyed
+	// on, so a new card goes on the end rather than renumbering the block.
+	//
+	// Memory Helix is the reason this one arrived late. The "use it as this
+	// attack" family (asMyBenchNPokemonAttack and friends) pays the *host*
+	// attack's Energy and only borrows the effect; Memory Helix instead lets
+	// Mew ex use a Benched attack at that attack's own cost, out of its own
+	// Energy -- which is how canUsePreEvolutionAttack already works, so it is
+	// enumerated alongside it in SetAttackEnergy (GameUtil.h).
+	CreateCard(1775, u8"ミュウex", Pokemon, 1775)
+		.nameEn(u8"Mew ex")
+		.pokemon(Ex, Basic, Psychic, 160, 0)
+		.weakness(Darkness)
+		.resistance(Fighting)
+		.benchPokemonAttacks()
+		.abilityActive(566, u8"メモリーヘリックス", u8"このポケモンは、自分のベンチポケモンが持つワザを使える。［ワザを使うためのエネルギーは必要。］")
+		.textEn(u8"Memory Helix", u8"This Pokémon can use the attacks of any of your Benched Pokémon. (You still need the necessary Energy to use each attack.)")
+		.attack(2362, u8"テレポートバースト", u8"のぞむなら、このポケモンをベンチポケモンと入れ替える。", "30", { Psychic })
+		.textEn(u8"Teleportation Burst", u8"You may switch this Pokémon with 1 of your Benched Pokémon.")
+		.setPostEffect()
+		.existMyBench()
+		.postEffectSelectActivate()
+		.effectSwitch(Me);
 	// ==== END 2026 sets ====
 }

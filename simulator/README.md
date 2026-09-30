@@ -445,6 +445,27 @@ worth making against a deployment that is misbehaving.
 
 ## Playing it from anywhere
 
+For a game or two with a friend, put the local server on the internet through a
+Cloudflare quick tunnel — no account, no domain, no card, and no published
+bandwidth cap, which matters because a single game pulls a few MB of card scans:
+
+    python server.py            # one terminal
+    ./tunnel.sh                 # another; prints an https://….trycloudflare.com
+
+Install `cloudflared` once, anywhere on `PATH`:
+
+    curl -fsSL -o ~/.local/bin/cloudflared \
+      https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+    chmod +x ~/.local/bin/cloudflared
+
+That address is public and unauthenticated, and it is random and different every
+time — that is what a quick tunnel is. `tunnel.sh` runs cloudflared's metrics
+server so `/api/public-url` can read the hostname back, which is what makes a
+room invitation carry a link to *this* machine rather than to the guest's own.
+For a hostname that stays put, put a domain on Cloudflare, make a named tunnel
+(`cloudflared tunnel create`) and set `PTCG_PUBLIC_URL`; that wins over both
+quick tunnels. If the link is slow, `PTCG_LIGHT_IMAGES=1` re-encodes the scans.
+
 `deploy/` turns this directory into a Hugging Face Space (Docker SDK):
 
     hf auth login

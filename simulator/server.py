@@ -472,10 +472,39 @@ def _ngrok_url() -> str | None:
     return None
 
 
+# cloudflared writes its quick-tunnel address to the log and nowhere else
+# unless its metrics server is running, so tunnel.sh always starts one here.
+CLOUDFLARED_METRICS = os.environ.get("PTCG_CLOUDFLARED_METRICS", "127.0.0.1:20241")
+
+
+def _cloudflared_url() -> str | None:
+    """The public https address of a local cloudflared quick tunnel, if any.
+
+    The same problem ``_ngrok_url`` solves, for the other tunnel: a quick
+    tunnel's hostname is random and changes every restart, so it cannot be
+    written down anywhere. cloudflared's metrics server answers ``/quicktunnel``
+    with the hostname it was given; ``tunnel.sh`` starts one on
+    ``CLOUDFLARED_METRICS`` precisely so this can ask.
+    """
+    try:
+        with urllib.request.urlopen(f"http://{CLOUDFLARED_METRICS}/quicktunnel", timeout=0.5) as r:
+            host = json.loads(r.read()).get("hostname")
+    except (OSError, ValueError):
+        return None
+    return f"https://{host}" if host else None
+
+
 @app.get("/api/public-url")
 def public_url() -> dict:
-    """Where a guest can reach this server: PTCG_PUBLIC_URL, else ngrok, else unknown."""
-    url = os.environ.get("PTCG_PUBLIC_URL") or _ngrok_url()
+    """Where a guest can reach this server.
+
+    ``PTCG_PUBLIC_URL`` first, so a named tunnel or a real domain always wins;
+    then whichever quick tunnel is actually running. Both are asked because a
+    machine can have either, and neither is knowable in advance.
+    """
+    url = (os.environ.get("PTCG_PUBLIC_URL")
+           or _ngrok_url()
+           or _cloudflared_url())
     return {"url": url.rstrip("/") if url else None}
 
 

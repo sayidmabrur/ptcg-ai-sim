@@ -645,15 +645,26 @@ def board_snapshot(obs: dict, seat: int) -> dict:
     every hand: the agent's hand is private, and the human's is not in that
     observation at all (the engine erased it) — the browser keeps its own hand
     from the last view it was given.
+
+    The same applies to the cards being *looked at*. The engine fills
+    ``looking`` for whoever the observation was built for (``ToJson.h`` checks
+    ``lookingPlayer`` against that seat), so an observation taken while the
+    opponent is resolving Pokégear, Recon Directive or Metal Maker names the
+    cards they are choosing among. Those must not be drawn on this seat's
+    board: the log already reduces them to "a face-down card", and a snapshot
+    that showed them would say the opposite of the feed beside it.
     """
     state = obs["current"]
     me = player_view(state["players"][seat], reveal_hand=False)
     opp = player_view(state["players"][1 - seat], reveal_hand=False)
+    # Whose observation this is. ``looking`` in it is that seat's to see.
+    observed_by = state.get("yourIndex")
+    looking = state.get("looking") or [] if observed_by == seat else []
     return {
         "me": me,
         "opp": opp,
         "stadium": card_info(state["stadium"][0]["id"]) if state["stadium"] else None,
-        "looking": [card_info(c["id"] if c else None) for c in (state.get("looking") or [])],
+        "looking": [card_info(c["id"] if c else None) for c in looking],
         "turn": state["turn"],
     }
 

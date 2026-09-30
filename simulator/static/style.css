@@ -31,7 +31,27 @@ select, button {
 button { cursor: pointer; }
 button:hover { border-color: var(--accent); }
 button:disabled { opacity: .45; cursor: default; }
-#status { margin-left: auto; color: var(--accent); font-size: 12px; }
+#status { color: var(--dim); font-size: 12px; }
+
+/* -- whose turn ---------------------------------------------------------- */
+/* One badge, and the acting half of the mat lit to match, so the answer is
+   both in the header and where your eyes already are. */
+.turnBadge {
+  margin-left: auto;
+  font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap;
+}
+.turnBadge[data-turn="me"]   { color: #7ee2a8; background: rgba(46,160,96,.16);  border-color: #2ea060; }
+.turnBadge[data-turn="opp"]  { color: #f0a6a6; background: rgba(224,108,108,.14); border-color: var(--bad); }
+.turnBadge[data-turn="wait"] { color: var(--dim); background: rgba(148,160,184,.12); border-color: var(--line); }
+.turnBadge[data-turn="over"] { color: var(--accent); background: rgba(244,197,66,.14); border-color: var(--accent); }
+
+/* The half that is acting keeps its nameplate lit; the other dims back. */
+.half { transition: box-shadow .18s ease; }
+body[data-turn="me"]  #meHalf  .nameplate .who,
+body[data-turn="opp"] #oppHalf .nameplate .who { color: var(--accent); }
+body[data-turn="me"]  #meHalf  { box-shadow: inset 0 0 0 2px rgba(46,160,96,.55); }
+body[data-turn="opp"] #oppHalf { box-shadow: inset 0 0 0 2px rgba(224,108,108,.5); }
 
 main { display: grid; grid-template-columns: minmax(720px, 1fr) 330px; gap: 12px; padding: 12px; align-items: start; }
 
@@ -307,11 +327,32 @@ button.ghost { background: transparent; }
   border: 1px solid var(--accent); border-radius: 999px; padding: 0 6px;
   font-size: 11px; font-weight: 700;
 }
+/* The steppers used to appear only on :hover, which made them invisible until
+   you happened to sweep the tile -- and unreachable on a touchscreen, where
+   there is no hover at all. They are always on the tile now, as solid chips so
+   they stay legible over card art rather than sinking into it. */
 .entry .step {
-  position: absolute; left: 0; right: 0; top: 0; display: none; justify-content: space-between;
+  position: absolute; left: 0; right: 0; top: 0;
+  display: flex; justify-content: space-between;
+  padding: 3px;
+  pointer-events: none;   /* only the chips take clicks; the tile keeps the rest */
 }
-.entry.editable:hover .step { display: flex; }
-.entry .step button { padding: 0 6px; font-size: 12px; line-height: 18px; }
+.entry .step .stepBtn {
+  pointer-events: auto;
+  width: 26px; height: 26px; padding: 0;      /* a real tap target, not a glyph */
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 999px;
+  background: rgba(11, 14, 20, .82);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .55);
+}
+.entry .step .stepBtn:hover { background: #0b0e14; border-color: var(--accent); color: var(--accent); }
+.entry .step .stepBtn:active { transform: translateY(1px); }
+.entry .step .stepBtn svg { width: 13px; height: 13px; display: block; }
+.entry .step .stepBtn svg path {
+  stroke: currentColor; stroke-width: 2; stroke-linecap: round; fill: none;
+}
 
 .builder { border-bottom: 1px solid #2b3448; padding-bottom: 8px; margin-bottom: 6px; }
 .builderBar { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
@@ -503,3 +544,28 @@ button.ghost { background: transparent; }
 .replayRow .meta { color: var(--dim); font-size: 12px; text-align: right; }
 .replayRow .won { color: #7fd48a; }
 .opp-hand .card.mini-card { width: 48px; min-height: 66px; }
+
+/* -- dragging ------------------------------------------------------------ */
+/* A lifted card leaves a gap where it was and rides under the pointer; the
+   places it may legally land are outlined, and the one under the pointer is
+   filled. Every one of those outlines comes from the server's option list, so
+   what looks droppable and what is droppable cannot disagree. */
+.hand .card.draggable { cursor: grab; }
+body.dragging, body.dragging * { cursor: grabbing !important; }
+.card.lifted { opacity: .3; filter: grayscale(.6); }
+
+.card.ghost {
+  position: fixed; left: 0; top: 0; z-index: 90; pointer-events: none;
+  margin: 0; transform: rotate(-3deg); opacity: .96;
+  outline: 2px solid var(--accent);
+  box-shadow: 0 12px 28px rgba(0,0,0,.6);
+}
+
+.dropOk { outline: 2px dashed var(--pick); outline-offset: 2px; }
+.dropHot {
+  outline: 3px solid var(--accent); outline-offset: 2px;
+  background: rgba(244,197,66,.14);
+}
+/* The Bench accepts a Basic as a whole row, because the engine -- not the
+   player -- decides which space it goes into. */
+.bench-row.dropOk, .bench-row.dropHot { border-radius: 10px; padding: 2px; }

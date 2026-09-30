@@ -172,6 +172,29 @@ inline void SetAttackEnergy(const State& state, const Card& card, const std::vec
 				}
 			}
 		}
+		// 特性「メモリーヘリックス」（ミュウex）：自分のベンチポケモンが持つワザを使える。
+		// 上の「このワザとして使う」系は“元のワザ”のエネルギーで支払うが、こちらは
+		// 借りたワザ自身のエネルギーを、このポケモンについているぶんから支払う。
+		// つまり進化前のワザとまったく同じ扱いなので、同じ形で並べる。
+		if (master.benchPokemonAttacks && state.getAbility(card, master) != nullptr) {
+			for (CardRef benchRef : state.players.at(playerIndex).bench) {
+				for (const Attack* attack : state.getCard(benchRef).getMaster().attacks) {
+					// 同じワザを2匹が持っていても、選択肢は1つだけにする
+					bool listed = false;
+					for (const AttackEnergy& ae : result) {
+						if (ae.attack == attack) {
+							listed = true;
+							break;
+						}
+					}
+					if (listed) {
+						continue;
+					}
+					int count = InsufficientEnergyCount(state, attack->energies, energyList, card, *attack);
+					result.push_back({ attack, count });
+				}
+			}
+		}
 		if (card.technicalMachine) {
 			for (CardRef ref : state.getAttachedToolRef(card)) {
 				const Card& tool = state.getCard(ref);

@@ -306,16 +306,47 @@ function renderDeckRows(rows, editable) {
     wrap.appendChild(el("span", "xn", `x${row.count}`));
     if (editable) {
       const step = el("div", "step");
-      const minus = el("button", "ghost", "−");
-      minus.addEventListener("click", (ev) => { ev.stopPropagation(); removeCard(row.id); });
-      const plus = el("button", "ghost", "+");
-      plus.addEventListener("click", (ev) => { ev.stopPropagation(); addCard(row.id, 1); });
-      step.appendChild(minus); step.appendChild(plus);
+      step.appendChild(stepButton("minus", `Remove one ${row.name}`,
+                                  () => removeCard(row.id)));
+      step.appendChild(stepButton("plus", `Add one ${row.name}`,
+                                  () => addCard(row.id, 1)));
       wrap.appendChild(step);
     }
     grid.appendChild(wrap);
   }
   if (!rows.length) grid.appendChild(el("div", "hint", "No cards yet — search below and add some."));
+}
+
+/** One of the deck tile's stepper buttons, with its glyph drawn inline.
+ *
+ *  Drawn rather than taken from an icon font. The page fetches nothing from the
+ *  network -- index.html loads its own stylesheet and script and that is all --
+ *  so a webfont for two glyphs would be the app's only external request, and
+ *  the first thing to fail offline, inside the Docker image, or across the
+ *  metered tunnel the README warns about. Two <path>s cost nothing and cannot
+ *  fail to arrive.
+ *
+ *  The label is spelled out for screen readers and for the hover title: a bare
+ *  + on a tile does not say what it adds.
+ */
+function stepButton(kind, label, onClick) {
+  const b = el("button", `stepBtn ${kind}`);
+  b.type = "button";
+  b.title = label;
+  b.setAttribute("aria-label", label);
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  for (const d of kind === "plus" ? ["M2.75 8h10.5", "M8 2.75v10.5"] : ["M2.75 8h10.5"]) {
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", d);
+    svg.appendChild(path);
+  }
+  b.appendChild(svg);
+  b.addEventListener("click", (ev) => { ev.stopPropagation(); onClick(); });
+  return b;
 }
 
 function addCard(id, n = 1) {
@@ -539,6 +570,13 @@ function slot(side, area, index, card, opts = {}) {
  *  that one only highlights the rows it could mean.
  */
 function hitOptions(hits) {
+  // A drop ends with a click on whatever was under the pointer. The drop has
+  // already chosen; letting that click through would choose a second time.
+  if (performance.now() - dropEndedAt < 250) return;
+  chooseAmong(hits);
+}
+
+function chooseAmong(hits) {
   if (hits.length === 1) { pickOption(hits[0]); return; }
   const sel = view.select;
   const many = sel && (sel.maxCount > 1 || sel.minCount === 0);
@@ -559,6 +597,193 @@ function markHot(hits, on) {
     const node = document.querySelector(`.option[data-index="${i}"]`);
     if (node) node.classList.toggle("hot", on);
   }
+}
+
+// -- dragging ---------------------------------------------------------------
+//
+// Dragging is a second way to say what a click already says, and deliberately
+// nothing more. A drop never invents a move: it looks up the option the
+// *server* sent for that exact (card, destination) pair and picks it, so the
+// wire carries the same `{"options": [i]}` a click would have sent and the
+// engine validates it identically. A gesture the option list does not contain
+// is not a drop target, which is what keeps the rules in the engine rather
+// than duplicated here -- there is no second, weaker copy of "can I attach
+// this?" in the browser that could disagree with the real one.
+//
+// Only two engine option types name both a card and where it lands: ATTACH
+// (Energy, Pokémon Tool) and EVOLVE, which are exactly the gestures the rules
+// describe as putting a card from your hand onto a Pokémon. Playing a Basic
+// names only the card, because the engine picks the Bench slot itself, so a
+// Basic drops onto the Bench as a whole and never onto one numbered space --
+// claiming otherwise would invent a choice the engine never offered. Anything
+// else stays a click: a Supporter has nowhere on the board to land.
+
+const DRAG_SLOP = 6;      // px of travel before a press is a drag and not a click
+const ZONE_FOR_GROUP = { "Pokémon": "bench" };  // single-ref plays, by option group
+
+let drags = new Map();    // source key -> Map(destination key -> [option index, ...])
+let held = null;          // {node, ghost, plan, dest, lit} while a card is off the table
+let dropEndedAt = 0;      // when the last drop finished, to swallow its trailing click
+
+function zoneKey(name) { return `zone:${name}`; }
+
+/** Index every option that reads as "put this card there".
+ *
+ *  Built from the same ``refs`` the highlight map uses and from nothing else:
+ *  refs[0] is the card leaving the hand, refs[1] the slot it lands on.
+ */
+function buildDrags() {
+  drags = new Map();
+  if (!view || !view.yourTurn) return;
+  for (const opt of view.options) {
+    const refs = opt.refs || [];
+    const src = refs[0];
+    if (!src || src.area !== "hand") continue;   // you pick up from your hand, nowhere else
+    let dest;
+    if (refs.length > 1) {
+      dest = key(refs[1].side || "me", refs[1].area, refs[1].index);
+    } else if (ZONE_FOR_GROUP[opt.group]) {
+      dest = zoneKey(ZONE_FOR_GROUP[opt.group]);
+    } else {
+      continue;
+    }
+    const from = key(src.side || "me", src.area, src.index);
+    if (!drags.has(from)) drags.set(from, new Map());
+    const byDest = drags.get(from);
+    if (!byDest.has(dest)) byDest.set(dest, []);
+    byDest.get(dest).push(opt.index);
+  }
+}
+
+/** The element standing for a destination: a board slot, or a whole zone. */
+function dropNode(dest) {
+  if (dest.startsWith("zone:")) {
+    return document.querySelector(`[data-zone="${dest.slice(5)}"]`);
+  }
+  return document.querySelector(`.slot[data-key="${dest}"], .card[data-key="${dest}"]`);
+}
+
+/** Let this node be picked up, if the option list gives it somewhere to go. */
+function armDrag(node, from) {
+  if (!drags.has(from)) return;
+  node.classList.add("draggable");
+  node.addEventListener("pointerdown", (ev) => pressToDrag(ev, node, from));
+}
+
+/** A press becomes a drag only after DRAG_SLOP px, so clicking still works.
+ *
+ *  Pointer events rather than HTML5 drag-and-drop: the card art sets
+ *  ``draggable = false`` to stop the browser's own image drag, the board is
+ *  played on touchscreens as well as with a mouse, and a native drag image
+ *  cannot be styled to look like the card leaving the hand.
+ */
+function pressToDrag(ev, node, from) {
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  if (busy || replaying || animating || watch) return;
+  if (!view || !view.yourTurn) return;
+  const plan = drags.get(from);
+  if (!plan || !plan.size) return;
+
+  const ox = ev.clientX, oy = ev.clientY;
+
+  const move = (m) => {
+    if (!held && Math.hypot(m.clientX - ox, m.clientY - oy) < DRAG_SLOP) return;
+    if (!held) liftCard(node, plan);
+    trackCard(m.clientX, m.clientY);
+  };
+  const finish = (u) => {
+    unwire();
+    if (!held) return;          // never travelled: it was a click, leave it alone
+    dropCard(u.clientX, u.clientY);
+  };
+  const abandon = () => { unwire(); releaseCard(); };
+  const onKey = (k) => { if (k.key === "Escape") { k.preventDefault(); abandon(); } };
+  function unwire() {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", abandon);
+    window.removeEventListener("keydown", onKey, true);
+  }
+
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", finish);
+  window.addEventListener("pointercancel", abandon);
+  window.addEventListener("keydown", onKey, true);
+}
+
+/** Take the card off the table: a ghost follows the pointer, the places it may
+ *  legally land light up, and the original stays behind greyed out. */
+function liftCard(node, plan) {
+  hideTip();   // the card is moving; a tooltip pinned to where it was is noise
+  const box = node.getBoundingClientRect();
+  const ghost = node.cloneNode(true);
+  ghost.classList.add("ghost");
+  ghost.classList.remove("targetable", "picked", "draggable");
+  // The clone must not answer to the destination lookups below, or a card could
+  // be dropped on its own shadow.
+  delete ghost.dataset.key;
+  for (const inner of ghost.querySelectorAll("[data-key]")) delete inner.dataset.key;
+  ghost.style.width = `${box.width}px`;
+  node.classList.add("lifted");
+  document.body.appendChild(ghost);
+  document.body.classList.add("dragging");
+  held = { node, ghost, plan, dest: null, lit: [], dx: box.width / 2, dy: box.height / 2 };
+  for (const dest of plan.keys()) dropNode(dest)?.classList.add("dropOk");
+}
+
+function trackCard(x, y) {
+  held.ghost.style.left = `${x - held.dx}px`;
+  held.ghost.style.top = `${y - held.dy}px`;
+  const dest = destUnder(x, y);
+  if (dest === held.dest) return;
+  if (held.dest) dropNode(held.dest)?.classList.remove("dropHot");
+  if (held.lit.length) { markHot(held.lit, false); held.lit = []; }
+  held.dest = dest;
+  if (!dest) return;
+  dropNode(dest)?.classList.add("dropHot");
+  // Name the move in the side list too, so the gesture and the wording the
+  // player would otherwise have clicked are visibly the same thing.
+  held.lit = held.plan.get(dest) || [];
+  markHot(held.lit, true);
+}
+
+/** Which legal destination, if any, is under the pointer. A slot the plan knows
+ *  wins over the zone containing it: dropping an Energy on a benched Pokémon
+ *  means that Pokémon, not "somewhere on the Bench". */
+function destUnder(x, y) {
+  const at = document.elementFromPoint(x, y);
+  if (!at) return null;
+  const slot = at.closest("[data-key]");
+  if (slot && held.plan.has(slot.dataset.key)) return slot.dataset.key;
+  const zone = at.closest("[data-zone]");
+  if (zone && held.plan.has(zoneKey(zone.dataset.zone))) return zoneKey(zone.dataset.zone);
+  return null;
+}
+
+function dropCard(x, y) {
+  const dest = destUnder(x, y);
+  const hits = dest ? held.plan.get(dest) : null;
+  releaseCard();
+  dropEndedAt = performance.now();
+  if (!hits || !hits.length) return;      // dropped on nothing: no move, nothing sent
+  if (hits.length === 1) { pickOption(hits[0]); return; }
+  // One card, one destination, two different options -- two Energy of the same
+  // type on the same Pokémon during a multi-select. The gesture cannot say
+  // which, so hand it to the same code a click uses.
+  chooseAmong(hits);
+}
+
+/** Put everything back the way it was drawn. Safe to call when nothing is held. */
+function releaseCard() {
+  if (!held) return;
+  held.ghost.remove();
+  held.node.classList.remove("lifted");
+  if (held.lit.length) markHot(held.lit, false);
+  for (const dest of held.plan.keys()) {
+    dropNode(dest)?.classList.remove("dropOk", "dropHot");
+  }
+  document.body.classList.remove("dragging");
+  held = null;
 }
 
 function stackPrizes(side, count) {
@@ -936,6 +1161,7 @@ async function playEvents(events, steps = []) {
     replaying = false;
     drawFinal();          // land on the real position, hand and all
     $("status").textContent = statusLine();
+  showTurn();
     renderChoice();
   }
 }
@@ -950,6 +1176,7 @@ function skipReplay() {
   $("stage").innerHTML = "";
   drawFinal();
   $("status").textContent = statusLine();
+  showTurn();
   renderChoice();
 }
 
@@ -967,10 +1194,43 @@ function buildTargets() {
       if (!targets.get(k).includes(opt.index)) targets.get(k).push(opt.index);
     }
   }
+  buildDrags();
 }
 
 /** The header line, recomputed rather than remembered — a replay finishing must
  *  not restore a status from before the click that started it. */
+/** Say whose turn it is, loudly.
+ *
+ *  The status line already carried this, but as one clause of a sentence in
+ *  12px grey -- you had to read "waiting on grimmsnarl_ex_xattn" to notice the
+ *  board was not yours to touch. This is the same fact as a badge you cannot
+ *  miss, and it also marks the half of the mat that is currently acting, so
+ *  the answer is where you are already looking.
+ */
+function showTurn() {
+  const badge = $("turnBadge");
+  if (!badge) return;
+  let state = "wait", text = "Waiting";
+  if (!view || !view.ready) {
+    state = "wait"; text = "Setting up";
+  } else if (view.finished && !replaying) {
+    state = "over"; text = "Game over";
+  } else if (replaying) {
+    // Mid-replay the board is showing the other side's turn being played out,
+    // whatever the view says about whose decision comes next.
+    state = "opp"; text = replayingOpponent ? "Opponent's turn" : "Your turn";
+  } else if (view.yourTurn) {
+    state = "me"; text = "Your turn";
+  } else {
+    state = "opp";
+    text = view.pvp ? `${view.names.opponent}'s turn` : "Opponent's turn";
+  }
+  badge.textContent = text;
+  badge.dataset.turn = state;
+  // The mat reads the same attribute, so the acting half lights up with it.
+  document.body.dataset.turn = state;
+}
+
 function statusLine() {
   if (!view) return "";
   if (!view.ready) return `waiting on ${view.waitingOn}`;
@@ -983,8 +1243,10 @@ function statusLine() {
 function render() {
   if (watch) return;   // a replay owns the board; the live game redraws on close
   hideTip();  // a card can be replaced while hovered, and then no mouseleave fires
+  releaseCard();  // ...and the same is true of a card being dragged
   if (!view || !view.ready) {
     $("status").textContent = statusLine();
+  showTurn();
     renderLog(view ? view.log : []);
     return;
   }
@@ -999,6 +1261,7 @@ function render() {
   document.querySelector("#meHalf .who").textContent = view.pvp ? `${view.names.you} (you)` : "You";
   if (view.pvp) $("agentName").textContent = "";
   $("status").textContent = statusLine();
+  showTurn();
 
   const events = view.events || [];
   const steps = view.steps || [];
@@ -1066,6 +1329,7 @@ function drawBoard(board, handCards) {
     cls: "active-spot", extra: "active-card", empty: "active", conditions: board.me.conditions,
   }));
   const meBench = $("meBench"); meBench.innerHTML = "";
+  meBench.dataset.zone = "bench";
   for (let i = 0; i < board.me.benchMax; i++) {
     meBench.appendChild(slot("me", "bench", i, board.me.bench[i] || null, { empty: "bench" }));
   }
@@ -1083,6 +1347,7 @@ function drawBoard(board, handCards) {
     const node = cardEl(c, { extra: hits.length ? "targetable" : "" });
     if (hits.length) {
       node.dataset.key = k;
+      armDrag(node, k);
       node.addEventListener("click", () => hitOptions(hits));
       node.addEventListener("mouseenter", () => markHot(hits, true));
       node.addEventListener("mouseleave", () => markHot(hits, false));

@@ -127,6 +127,13 @@ public:
 		return *this;
 	}
 
+	// 特性で、自分のベンチポケモンが持つワザを使える。ワザのエネルギーは
+	// このポケモンについているぶんで支払う（ミュウex「メモリーヘリックス」）
+	Chain& benchPokemonAttacks() {
+		card.benchPokemonAttacks = true;
+		return *this;
+	}
+
 	Chain& ethan() {
 		card.ethan = true;
 		return *this;

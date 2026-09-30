@@ -63,6 +63,7 @@ struct CardMaster {
 	bool toActiveOnlySetup; // 対戦準備でポケモンをバトル場に出すとき、このカードが手札にあるなら、ウラにしてバトル場に出してよい
 	bool noPrize; // このカードが【きぜつ】しても、相手はサイドをとれない
 	bool onlyTeamRocket; // 「ロケット団のポケモン」にしかつけられず、「ロケット団のポケモン」以外についているなら、トラッシュする
+	bool benchPokemonAttacks; // 特性で、自分のベンチポケモンが持つワザを使える（ミュウex「メモリーヘリックス」）
 
 	bool ancient;
 	bool future;
