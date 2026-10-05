@@ -1,3 +1,4 @@
+import csv
 import os
 from pathlib import Path
 
@@ -63,3 +64,9 @@ def read_deck_csv() -> list[int]:
     for i in range(60):
         deck.append(int(csv[i]))
     return deck
+
+
+def count_supported_cards(csv_file_path) -> int:
+    """Count distinct card IDs in the engine card-data CSV."""
+    with open(csv_file_path, encoding="utf-8-sig", newline="") as f:
+        return len({row["Card ID"] for row in csv.DictReader(f)})
