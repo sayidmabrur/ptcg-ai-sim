@@ -79,6 +79,12 @@ class StateEncoder(nn.Module):
         self.board_embedding = BoardStateEmbedding(self.card_embed)
         self.player_embedding = PlayerStateEmbedding(self.card_embed)
     pass
+
+class LogsEncoder(nn.Module):
+    pass
+
+class SelectEncoder(nn.Module):
+    pass
 # class PlayerStateEncoder(nn.Module):
 #
 #     def __init__(self):
