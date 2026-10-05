@@ -40,17 +40,6 @@ class BoardPositionalEncoding(nn.Module):
 
 class BoardStateEmbedding(nn.Module):
 
-    # data sample size: [B, W, H]
-    # sample[0][0]['ids']:         [opp_card_active, opp_benched_cards,  player_card_active, player_benched_cards, stadium_in_play_card, supporter_played_card, energy_played_card, stadium_played_card, prize_count, deck_count, opp_prize_count, opp_deck_count]
-    # sample[0][0]['ids'](sample): ['dragapult ex',  'dreepy', grimmsnarl ex', 'impidimp', 'munkidori', 'snorunt','NONE', 'NONE', 'spikemuth', NONE, 'basic dark energy',   NONE,         6]
-    # positional encoding  :       [OPP_ACTIVE,     OPP_BENCH', PLAYER_ACTIVE, PLAYER_BENCH, PLAYER_BENCH,PLAYER_BENCH,PLAYER_BENCH,PLAYER_BENCH,STADIUM_IN_PLAY,SUPPORTER,ENERGY,STADIUM_PLAYED,PRIZE_COUNT]
-    # masks ideas
-    # board state has 7 type of pos_masks: ACTIVE, BENCHx5, STADIUM_IN_PLAY, SUPPORTER, ENERGY, STADIUM_PLAYED, PRIZE_COUNT, DECK_COUNT
-    # UNIQUE POS MASKS: ACTIVE, BENCH, STADIUM_IN_PLAY, SUPPORTER, ENERGY, STADIUM_PLAYED
-    # vocab_size: total_card + SPECIAL_TOKENS
-    # SPECIAL TOKENS:
-    # - <NONE> (empty card)
-    # BENCH CAN UP TO 5 but some strats can expand it to 8 pokemons in bench
     def __init__(self, card_embed: nn.Embedding, max_bench_card=8):
         super().__init__()
         self.card_embed = card_embed
