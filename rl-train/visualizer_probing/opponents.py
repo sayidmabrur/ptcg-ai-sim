@@ -94,8 +94,6 @@ def agent_deck(spec: str) -> Path:
 
 
 class BundleAgent:
-    """A registered bundle, driven over a pipe in its own interpreter."""
-
     def __init__(self, spec: str, bundle: Path) -> None:
         self.name = spec
         self.bundle = bundle

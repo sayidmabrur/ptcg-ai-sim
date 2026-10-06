@@ -210,11 +210,6 @@ def embedding_card_id(card_id: torch.Tensor) -> torch.Tensor:
 
 
 class CardStage(IntEnum):
-    """Pokémon evolution stage. Trainer/Energy cards (``basic``/``stage1``/
-    ``stage2`` all ``False`` in ``CardData`` — confirmed against
-    ``all_card_data()``: 206 of 1267 cards) get ``NOT_APPLICABLE``, same as
-    the ``card_id`` 0 padding/no-card sentinel."""
-
     NOT_APPLICABLE = 0
     BASIC = 1
     STAGE1 = 2
@@ -696,13 +691,6 @@ def _special_condition(value: int | None) -> int:
 
 @dataclass
 class OptionsVocab:
-    """One decision's option list, as parallel ``(num_options,)`` tensors.
-
-    Fields mirror ``cg.api.Option`` (see ``features.OPTION_FIELDS``), except
-    ``playerIndex`` which ``features._remap_options`` already turns into the
-    POV-relative ``targets_opponent``.
-    """
-
     type: torch.Tensor
     number: torch.Tensor
     area: torch.Tensor
@@ -748,14 +736,6 @@ class OptionsVocab:
 
 @dataclass
 class SelectionVocab:
-    """One decision's selection, as scalar tensors.
-
-    ``deck`` is encoded as its length (0 unless selecting from the deck);
-    ``contextCard``/``effect`` as the referenced card's id (0 if unset) — the
-    game state elsewhere already carries each card's full struct, so nothing
-    beyond identity is needed to place these mid-decision.
-    """
-
     type: torch.Tensor
     context: torch.Tensor
     min_count: torch.Tensor

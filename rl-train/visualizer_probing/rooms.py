@@ -33,8 +33,6 @@ NAME_MAX = 24
 
 
 class RoomError(Exception):
-    """A request the browser should see as an HTTP error, with its status."""
-
     def __init__(self, status: int, detail: str) -> None:
         super().__init__(detail)
         self.status = status
@@ -75,7 +73,6 @@ class Room:
         raise RoomError(403, "you are not in this room")
 
     def lobby(self, me: Player) -> dict:
-        """What the lobby page shows: who is here, and who is ready."""
         return {
             "room": self.id,
             "status": self.status,
@@ -89,7 +86,6 @@ class Room:
         }
 
     def start(self) -> None:
-        """Both are ready: give the room a worker and deal the game."""
         order = self.players[:]
         random.shuffle(order)           # who is engine seat 0 is a coin flip
         for seat, p in enumerate(order):

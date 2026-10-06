@@ -48,11 +48,11 @@ IDLE_TIMEOUT = float(os.environ.get("PTCG_IDLE_TIMEOUT", str(20 * 60)))
 
 
 class SessionBusy(Exception):
-    """The server is already running as many games as it will run."""
+    pass
 
 
 class SessionGone(Exception):
-    """This session's worker died; the browser should start a new game."""
+    pass
 
 
 def new_session_id() -> str:
@@ -60,8 +60,6 @@ def new_session_id() -> str:
 
 
 class Session:
-    """One visitor's game: a worker process, and the lock serialising it."""
-
     def __init__(self, sid: str) -> None:
         self.sid = sid
         self.lock = threading.Lock()
@@ -92,7 +90,6 @@ class Session:
         return line
 
     def request(self, op: str, payload: dict | None = None) -> dict:
-        """Forward one request to this session's worker and return its reply."""
         with self.lock:
             self.touched = time.monotonic()
             if self.process.poll() is not None:
@@ -124,14 +121,11 @@ class Session:
 
 
 class Registry:
-    """The live sessions, and the rules for making and reclaiming them."""
-
     def __init__(self) -> None:
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
 
     def _reap(self) -> None:
-        """Drop sessions whose worker died or which nobody has touched."""
         now = time.monotonic()
         for sid, session in list(self._sessions.items()):
             # Never reclaim a session that is mid-request: closing its stdin
@@ -155,7 +149,6 @@ class Registry:
             return self._sessions.get(sid)
 
     def open(self, sid: str | None) -> tuple[str, Session]:
-        """The caller's session, started if this is their first game."""
         with self._lock:
             self._reap()
             if sid and sid in self._sessions:

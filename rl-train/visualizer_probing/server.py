@@ -569,15 +569,6 @@ def index() -> HTMLResponse:
 
 
 class _FreshStatic(StaticFiles):
-    """Serve the page assets with ``no-cache``.
-
-    Not a micro-optimisation in reverse: the browser was holding an old
-    ``style.css``/``app.js`` across restarts, so a fixed layout still looked
-    broken until a hard reload. ``no-cache`` keeps the file cached but forces a
-    revalidation, so an edited asset is picked up on an ordinary reload while an
-    unchanged one still answers 304.
-    """
-
     async def get_response(self, path: str, scope):
         response = await super().get_response(path, scope)
         response.headers["Cache-Control"] = "no-cache"

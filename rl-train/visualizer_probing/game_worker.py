@@ -46,8 +46,6 @@ _history: list[str] = []
 
 
 class Refused(Exception):
-    """A request the browser should see as an HTTP error, with its status."""
-
     def __init__(self, status: int, detail: str) -> None:
         super().__init__(detail)
         self.status = status

@@ -40,20 +40,6 @@ from observation import DEFAULT_SPEC, ObservationSpec, build_observation
 
 
 class LiveFeatureExtractor:
-    """Per-episode decision memory over live ``obs`` dicts.
-
-    This class owns exactly one thing the offline path does not: turning a
-    stream of engine observations into the row sequence the backward history
-    scans need, since a single ``obs`` carries no memory of earlier
-    decisions.  Assembling features from those rows is ``observation.py``'s
-    job, shared with ``dataset.py`` — so "what the policy sees" is defined
-    once rather than reimplemented per call site.
-
-    ``record_action`` is optional: skip it and ``decision_chain`` entries
-    carry ``target_action: None`` (the selection/options are still there).
-    Call it to match the offline dataset exactly.
-    """
-
     def __init__(
         self,
         opponent_history_size: int | None = None,
@@ -74,23 +60,17 @@ class LiveFeatureExtractor:
         self._rows: list[dict[str, Any]] = []
 
     def reset(self, episode_id: int | None = None) -> None:
-        """Start a new episode.  Rows from the previous one are dropped, so a
-        scan can never walk across an episode boundary."""
         self._episode_id = self._episode_id + 1 if episode_id is None else episode_id
         self._rows = []
 
     @property
     def rows(self) -> list[dict[str, Any]]:
-        """This episode's decision rows so far, in parquet row shape (the last
-        one's ``target_action`` is ``None`` until ``record_action``)."""
         return self._rows
 
     def _read_row(self, index: int) -> dict[str, Any]:
         return self._rows[index]
 
     def __call__(self, obs: dict[str, Any]) -> dict[str, Any]:
-        """Append this decision to the episode memory and return its
-        ``{"features": ..., "meta": ...}`` observation."""
         if obs.get("select") is None:
             raise ValueError(
                 "obs has no 'select' — there is no decision to featurise "
@@ -112,8 +92,6 @@ class LiveFeatureExtractor:
         return build_observation(self._read_row, len(self._rows) - 1, row, self.spec)
 
     def record_action(self, action: list[int]) -> None:
-        """Attach the action chosen for the most recent observation, so it
-        shows up as ``target_action`` in later ``decision_chain`` entries."""
         if not self._rows:
             raise RuntimeError("record_action called before any observation was extracted.")
         self._rows[-1]["target_action"] = list(action)

@@ -83,14 +83,6 @@ def _slug(name: str) -> str:
 
 
 class Recorder:
-    """Collects one game's frames as it is played; ``save`` writes the file.
-
-    Frames follow the Kaggle replay exactly: frame 0 is the empty start, frame 1
-    is both seats submitting their decks, and every later frame is one selection
-    -- the mover's action, then each seat's observation, the seat that must
-    answer next ACTIVE and the other INACTIVE with the observation it last had.
-    """
-
     def __init__(self, names: list[str], decks: list[list[int]], mode: str, first_obs: dict) -> None:
         self.names = list(names)
         self.decks = [list(d) for d in decks]
@@ -118,14 +110,11 @@ class Recorder:
         ])
 
     def selection(self, seat: int, choice: list[int], obs: dict) -> None:
-        """``seat`` chose ``choice``; ``obs`` is the observation that came back."""
         actions: list[list[int]] = [[], []]
         actions[seat] = list(choice)
         self._frame(actions, obs)
 
     def save(self, result: int, visualize: list | None) -> Path | None:
-        """Write the file. ``result`` is the engine's: 0/1 the winning seat, 2 a
-        draw, -1 a game abandoned before it ended (saved too, marked INCOMPLETE)."""
         if self.saved is not None or not ENABLED:
             return self.saved
         finished = result in (0, 1, 2)

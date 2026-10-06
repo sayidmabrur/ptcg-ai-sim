@@ -234,13 +234,6 @@ def _save(recorder, result: int) -> None:
 
 
 class Battle:
-    """A live game between the human seat and one agent.
-
-    ``advance`` runs the engine forward, letting the agent answer every
-    selection put to it, and stops the moment the human has a decision to make
-    or the match ends. The human's own observation is the only one retained.
-    """
-
     def __init__(self, human_deck: list[int], agent_deck: list[int], human_seat: int, agent,
                  names: tuple[str, str] = ("Player", "agent")) -> None:
         self.human_seat = human_seat
@@ -277,16 +270,6 @@ class Battle:
         return self.obs["current"]["yourIndex"]
 
     def _absorb(self) -> None:
-        """Fold the current observation into what the human is allowed to see.
-
-        Normally the human's own next observation carries the whole of the
-        agent's turn, so nothing here has to be kept as it goes. When the match
-        *ends* on the agent's turn there is no next observation, and the agent's
-        final one holds only the slice since its previous decision — which is
-        how a game could end on "You lose" with the attack, the damage and the
-        Knock Out that caused it never shown. So the turn is also accumulated as
-        it happens, redacted, and used only if the human is never asked again.
-        """
         state = self.obs["current"]
         if state["result"] != -1:
             self.finished = True
@@ -314,13 +297,6 @@ class Battle:
             self._trail_open = False
 
     def advance(self) -> None:
-        """Let the agent play until the human must choose (or the game ends).
-
-        One snapshot per decision, each carrying the number of log entries that
-        decision wrote. A step is then a whole move — *this* is the board, *this*
-        is what was done to reach it — which is what the browser replays, rather
-        than two independent streams it has to line up by counting.
-        """
         # What the browser already holds of the agent's first observation: that
         # observation reaches back to the agent's previous decision, over
         # everything delivered since.
@@ -346,20 +322,12 @@ class Battle:
             self._delivered = 0
 
     def _snapshot(self, wrote: int | None = None) -> None:
-        """Record the board, and how many log entries produced it.
-
-        ``wrote`` is ``None`` when the count is not knowable from the engine —
-        the opening position, and the agent's final decision, whose following
-        observation belongs to the human and spans the whole batch. Those are
-        filled in at delivery from what is left over.
-        """
         self.pending_steps.append({
             "board": render.board_snapshot(self.obs, self.human_seat),
             "_wrote": wrote,
         })
 
     def select(self, choice: list[int]) -> None:
-        """Apply the human's selection, then hand control back to the agent."""
         if self.finished:
             raise RuntimeError("the match is over")
         if self.acting_seat != self.human_seat:
@@ -391,20 +359,6 @@ class Battle:
         return logs
 
     def take_steps(self, logs: list[dict]) -> list[dict]:
-        """This batch as a list of moves: each board with the events that made it.
-
-        Every step owns its own slice of the log, cut by how many entries each
-        decision wrote, so the browser replays *board, what was done, next board*
-        instead of trying to line two independent streams up by position. The
-        slices come from the human's own batch, so nothing here has to decide
-        what may be shown — the engine already redacted it for this seat.
-
-        An unknown count (the opening board, and the agent's last decision,
-        whose following observation belongs to the human) takes what is left
-        over. If the counts do not add up — a game ending mid-turn hands over a
-        reconstructed batch — the remainder simply lands on the last step, which
-        is late but never out of order.
-        """
         steps, self.pending_steps = self.pending_steps, []
         if not steps:
             return steps
@@ -435,26 +389,6 @@ class Battle:
 
 
 class PvpBattle:
-    """A live game between two people, each seeing only what their seat may see.
-
-    ``Battle`` can keep one observation and discard the other because its second
-    seat is an agent that answers inside the request. Here both seats are
-    browsers that poll, so each seat keeps its own queue of events and boards,
-    and the waiting seat must see the other's turn as it happens rather than all
-    at once when its own next decision comes round.
-
-    What makes that safe is a property of the engine checked across thousands of
-    decisions: every observation's log reaches back to that seat's previous
-    observation, and the two seats' logs describe the same events one for one,
-    only redacted differently. So a single running count of events is enough.
-    Each new observation carries ``len(logs) - (count - seen[seat])`` entries
-    nobody has had yet; the acting seat receives them as the engine wrote them
-    for it, and the other seat receives ``public_logs`` of them -- the same
-    reduction ``Battle`` already applies to an agent's turn. When the waiting
-    seat's own observation arrives later it reaches back over entries it was
-    already shown, and those are skipped by the same count.
-    """
-
     def __init__(self, decks: list[list[int]], names: list[str] | None = None) -> None:
         obs, start = battle_start(decks[0], decks[1])
         if obs is None:
@@ -497,7 +431,6 @@ class PvpBattle:
             })
 
     def select(self, seat: int, choice: list[int]) -> None:
-        """Apply ``seat``'s selection; refused unless that seat holds the decision."""
         if self.finished:
             raise RuntimeError("the match is over")
         if self.acting_seat != seat:
@@ -519,7 +452,6 @@ class PvpBattle:
         self._absorb()
 
     def take(self, seat: int) -> tuple[list[dict], list[dict]]:
-        """The events and boards ``seat`` has not been given yet, consumed."""
         logs, self._logs[seat] = self._logs[seat], []
         steps, self._steps[seat] = self._steps[seat], []
         # A poll with nothing new would otherwise hand back a lone board; the

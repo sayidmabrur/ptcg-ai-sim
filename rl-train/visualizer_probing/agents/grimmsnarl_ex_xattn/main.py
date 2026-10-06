@@ -208,13 +208,6 @@ def _greedy_action(logits, stop_logit, options_mask, min_count, max_count,
 
 
 class _Policy:
-    """Lazily-loaded network plus per-episode feature memory.
-
-    Loading is deferred to the first real decision: the harness's first call
-    only asks for a decklist, and paying the torch import plus weight load there
-    risks a startup timeout for nothing.
-    """
-
     def __init__(self) -> None:
         self.network = None
         self.extractor = None

@@ -24,53 +24,6 @@ from vocab import (
 
 
 class PolicyFeatureDataset(Dataset):
-    """Load decision samples written by ``convert_replays.py`` and reshape them
-    into the feature groups a policy network consumes.
-
-    Each sample is ``(features, meta)`` for the observation, plus the target:
-      - ``features["state"]``: the deciding player's own board (hand included).
-      - ``features["opponent_state"]``: the opponent's board, same shape, hand
-        redacted to ``None`` by the game engine already (only ``handCount``
-        known).
-      - ``features["global_state"]``: match-level context not scoped to
-        either player (turn, stadium, energy/supporter-played flags, etc).
-      - ``features["decision_context"]``: the selection being made and the
-        options offered — only ever the deciding player's, never the
-        opponent's.
-      - ``features["opponent_history"]``: a list of per-turn diffs of the
-        opponent's board over their last ``opponent_history_size`` turns
-        (oldest first), built from the resulting board state after each of
-        their turns — never their raw ``target_action``, since that's an
-        internal option index the opponent never actually gets to observe
-        about themselves; diffed against ``EMPTY_BOARD_STATE`` for their
-        first captured turn so every entry has the same shape. The default
-        ``opponent_history_size`` of 60 is above any realistic turn count, so
-        it covers the whole match; pass 0 to switch the group off.
-      - ``features["decision_chain"]``: this same actor's own last
-        ``decision_chain_size`` decisions across the whole match (oldest
-        first) — turn/selection/options/chosen target, since this is the
-        actor's own past choices, not something being inferred about the
-        opponent. The opponent's interleaved decisions are filtered out, not
-        treated as a boundary, so this is purely the deciding player's
-        history from their own perspective; each entry's ``turn`` says which
-        turn it came from. Pass 0 to switch the group off.
-      - ``meta``: bookkeeping only (``episode_id``, ``frame_index``,
-        ``player_index``, ``player_name``) — everything is already reoriented
-        to the deciding player's POV, so ``player_index`` is not a feature
-        the model should condition on, only a raw-slot pointer for tracing
-        rows back through an episode (e.g. building opponent history).
-
-    The target is the list of option *indexes* selected by that player.  The
-    index is local to ``features["decision_context"]["options"]``; it is not
-    a card ID.
-
-    ``player_name`` restricts the *samples* to one agent (or several) for
-    imitation learning, so every target is a decision that agent actually
-    made.  It does not restrict what the feature builders may read: the
-    opponent's rows stay visible to the backward scans, since dropping them
-    would erase the opponent's turns from ``opponent_history``.
-    """
-
     def __init__(
         self,
         parquet_path: str | Path,
@@ -145,23 +98,9 @@ class PolicyFeatureDataset(Dataset):
         return len(self._row_indexes)
 
     def raw_index(self, idx: int) -> int:
-        """Map a sample index to its index in the underlying Parquet file.
-
-        The two differ once ``player_name`` filtering is on.  Feature builders
-        walk the *raw* space so the opponent's rows remain visible.
-        """
         return idx if self._row_indexes is None else self._row_indexes[idx]
 
     def episode_ids(self) -> list[Any]:
-        """The episode id of every *sample*, in sample-index order.
-
-        Exists so a train/validation split can be grouped by match rather
-        than by row: consecutive rows of one game share almost all of their
-        board state, and ``decision_chain``/``opponent_history`` explicitly
-        scan backwards over earlier rows of the same episode — so splitting
-        row-wise puts near-copies of a validation sample (and its own
-        history) in the training set, and the validation score stops
-        measuring generalisation at all."""
         column = self._parquet.read(columns=["episode_id"]).to_pandas()["episode_id"]
         if self._row_indexes is None:
             return column.tolist()
@@ -169,14 +108,12 @@ class PolicyFeatureDataset(Dataset):
 
     @staticmethod
     def _touch(cache: OrderedDict, key: int, value: Any, limit: int) -> Any:
-        """Insert ``key`` as the most recently used entry, evicting the oldest."""
         cache[key] = value
         if len(cache) > limit:
             cache.popitem(last=False)
         return value
 
     def _read_row(self, idx: int) -> dict[str, Any]:
-        """Read a *raw* Parquet row.  Not sample-indexed — see ``raw_index``."""
         row = self._row_cache.get(idx)
         if row is not None:
             self._row_cache.move_to_end(idx)

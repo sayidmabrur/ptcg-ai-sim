@@ -109,25 +109,12 @@ BOARD_SLOT_VOCAB = NO_SLOT + 1
 
 
 class ReversePositionalEmbedding(nn.Module):
-    """Learned position embedding indexed by *recency*, not absolute slot.
-
-    ``nn.TransformerEncoder`` is permutation-invariant on its own — with no
-    position signal, a 60-step decision chain is processed as an unordered
-    bag, which is not a sequence model at all. The chains here are stored
-    oldest-first and right-padded, so absolute slot 0 means "oldest" and the
-    slot holding the *most recent* decision moves depending on how long the
-    chain happens to be. Indexing from the end instead makes position 0 always
-    "what I just did", which is the stable, meaningful frame — and it is
-    recency that decisions actually condition on.
-    """
-
     def __init__(self, dim: int, max_len: int = MAX_SEQ_LEN):
         super().__init__()
         self.embed = nn.Embedding(max_len, dim)
         self.max_len = max_len
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """``x`` is (B, L, D); ``mask`` (B, L) marks real steps."""
         lengths = mask.sum(dim=-1, keepdim=True)  # (B, 1)
         slots = torch.arange(x.shape[1], device=x.device).unsqueeze(0)  # (1, L)
         # Most recent valid step -> 0, the one before it -> 1, ... Padding
@@ -178,11 +165,6 @@ def _last_valid(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
 
 
 class CardEmbed(nn.Module):
-    """Shared card representation: id + CardData-derived categorical flags,
-    used for every ``card_id`` slot (Pokémon, options, hand, stadium, ...).
-    Missing narrowed flags (e.g. an energy card has no ``stage``/``ex``) fall
-    back to zeros so the same module works for full and narrowed joins."""
-
     def __init__(self, dim=D, dropout=DEFAULT_DROPOUT):
         super().__init__()
         self.id = nn.Embedding(CARD_ID_VOCAB_SIZE, dim)
@@ -204,8 +186,6 @@ class CardEmbed(nn.Module):
         self.drop = nn.Dropout(dropout)
 
     def forward(self, fields: dict) -> torch.Tensor:
-        """``fields`` is already sliced to plain keys (``id``/``stage``/...)
-        by ``_card_fields`` — missing narrowed flags fall back to zeros."""
         card_id = fields["id"]
         zeros = torch.zeros_like(card_id)
         float_zeros = torch.zeros_like(card_id, dtype=torch.float)
@@ -260,9 +240,6 @@ def _card_fields(fields: dict, prefix: str) -> dict:
 
 
 class OptionEncoder(nn.Module):
-    """One option -> vector. Options are a *set* within a decision (order is
-    meaningless — pooled with a mask), not a sequence."""
-
     def __init__(self, dim=D, dropout=DEFAULT_DROPOUT):
         super().__init__()
         self.card = CardEmbed(dim, dropout)
@@ -370,28 +347,6 @@ class SelectionEncoder(nn.Module):
 
 
 class DecisionChainEncoder(nn.Module):
-    """Actor's own last N decisions — a genuine temporal sequence, so this is
-    the one group that gets a ``TransformerEncoder``.
-
-    It is run **causally** and read out at the *last* step rather than
-    mean-pooled. Mean-pooling a prefix of plays is order- and recency-blind:
-    "played Ultra Ball, then searched out Grimmsnarl ex, so I am now holding
-    it" and the reverse order pool to the identical vector, yet only one of
-    them makes the next option good. A turn in this game is a *chain* of
-    plays whose value is path-dependent, so the state the current decision
-    conditions on is "where the chain has got to", which is precisely the
-    hidden state above the most recent step — and under a causal mask that
-    state is a summary of the whole prefix, not just of that one step.
-
-    The causal mask is what makes the readout meaningful: without it every
-    position mixes with every other, so the last position is just another
-    pooling of the same bag and carries no notion of "so far".
-
-    ``forward`` returns the per-step states too, so the current decision's
-    options can cross-attend over the prefix instead of only seeing this one
-    fused vector (see ``PolicyNetwork``).
-    """
-
     def __init__(self, dim=D, nhead=2, layers=8, dropout=DEFAULT_DROPOUT, ff_mult=2):
         super().__init__()
         self.dim = dim
@@ -412,7 +367,6 @@ class DecisionChainEncoder(nn.Module):
         self.transformer = nn.TransformerEncoder(encoder_layer, layers)
 
     def forward(self, decision_chain: dict):
-        """``(last_state (B, D), steps (B, L, D), chain_mask (B, L))``."""
         chain_mask = decision_chain["chain_mask"]  # (B, chain_len)
         if chain_mask.shape[1] == 0:  # every sample in the batch has an empty chain
             # ``self.dim``, not the module-level ``D``: a network built at any other
@@ -452,14 +406,6 @@ class DecisionChainEncoder(nn.Module):
 
     @staticmethod
     def _chosen(option_vecs: torch.Tensor, decision_chain: dict) -> torch.Tensor:
-        """Pool the encodings of the options the actor actually selected.
-
-        ``target_action`` is (B, L, T) option indexes padded with -1 (a
-        decision can select several options), with ``target_action_mask``
-        marking the real ones. Indexes are clamped into range before the
-        gather so the -1 padding cannot index backwards; those slots are then
-        excluded by the mask.
-        """
         targets = decision_chain["target_action"]
         target_mask = decision_chain["target_action_mask"]
         num_options = option_vecs.shape[-2]
@@ -472,10 +418,6 @@ class DecisionChainEncoder(nn.Module):
 
 
 class DecisionContextEncoder(nn.Module):
-    """The current decision — same option/selection encoders as the chain,
-    but this also exposes per-option vectors (for scoring against the
-    pooled state to produce action logits), not just a pooled summary."""
-
     def __init__(self, dim=D, nhead=2, layers=2, dropout=DEFAULT_DROPOUT, ff_mult=2):
         super().__init__()
         self.dim = dim
@@ -512,26 +454,6 @@ class DecisionContextEncoder(nn.Module):
 
 
 class OptionCrossAttention(nn.Module):
-    """Lets the current decision's options attend over the fused state *and*
-    every step of the causal decision-chain prefix.
-
-    ``DecisionContextEncoder`` already makes the options compare against each
-    other; what it cannot do is make that comparison conditional on the state
-    in any way richer than the single query vector concatenated in
-    ``PolicyNetwork.score``. A concatenated query enters the option's score
-    additively at one point — the option cannot *ask* anything of the state.
-    Cross-attention makes the conditioning content-addressed: "I am the
-    'attach Darkness energy to the benched Grimmsnarl' option, what in the
-    prefix is relevant to me?" — and different options query different parts
-    of the same prefix, which is what a chain of plays needs.
-
-    The memory is the state vector followed by the per-step chain states, so
-    an option can reach a specific earlier play directly rather than through
-    the single fused readout. Position 0 of the memory is the state token and
-    is never padded, so no row can have an entirely masked memory and the
-    ``_safe_key_padding_mask`` dance is unnecessary on that side.
-    """
-
     def __init__(self, dim=D, nhead=2, layers=2, dropout=DEFAULT_DROPOUT, ff_mult=2):
         super().__init__()
         self.dim = dim
@@ -548,22 +470,6 @@ class OptionCrossAttention(nn.Module):
         self.state_marker = nn.Parameter(torch.zeros(dim))
 
     def zero_residual_branches(self) -> None:
-        """Make this block an *exact* identity, for warm-starting a checkpoint that predates it.
-
-        The class docstring notes that a pre-LN block is "near-identity" at init and that the
-        concatenated query keeps the old scoring path intact. Near is not the same as exact:
-        every residual branch here ends in a randomly-initialised projection, so an untrained
-        block adds small random noise to every option vector, and the policy being warm-started
-        was *measured* — 62.5% against the frozen field — through the path without it. PPO has
-        already been observed destroying a competent clone here (52.8% -> 41.7%), so handing it
-        a starting policy that is only approximately the measured one gives up the single
-        firmest number in the run for nothing.
-
-        Zeroing each branch's output projection makes ``x + branch(LN(x))`` exactly ``x`` at
-        init, so the warm start reproduces the clone bit-for-bit and cross-attention grows in
-        from zero as PPO finds it useful. Gradients still flow: the projections' inputs are
-        non-zero, so their weights receive gradient on the first backward pass.
-        """
         for layer in self.decoder.layers:
             for projection in (layer.self_attn.out_proj, layer.multihead_attn.out_proj,
                                layer.linear2):
@@ -598,8 +504,6 @@ class OptionCrossAttention(nn.Module):
 
 
 class GlobalStateEncoder(nn.Module):
-    """Fixed-size scalars/categoricals — a flat MLP, no sequence/set structure."""
-
     def __init__(self, dim=D, dropout=DEFAULT_DROPOUT):
         super().__init__()
         self.first_player = nn.Embedding(3, dim // 4)
@@ -643,8 +547,6 @@ class GlobalStateEncoder(nn.Module):
 
 
 class PokemonEncoder(nn.Module):
-    """One board Pokémon (active or bench slot) -> vector."""
-
     def __init__(self, dim=D, dropout=DEFAULT_DROPOUT):
         super().__init__()
         self.card = CardEmbed(dim, dropout)
@@ -682,10 +584,6 @@ class PokemonEncoder(nn.Module):
 
 
 class PlayerStateEncoder(nn.Module):
-    """A player's board (own or opponent's, same shape) — active/bench
-    Pokémon are a permutation-invariant *set*, so mean-pooled, not a
-    sequence model."""
-
     def __init__(self, dim=D, dropout=DEFAULT_DROPOUT):
         super().__init__()
         self.pokemon = PokemonEncoder(dim, dropout)
@@ -704,21 +602,6 @@ class PlayerStateEncoder(nn.Module):
         return _masked_mean_sum(vecs, fields[f"{prefix}_mask"])
 
     def pokemon_tokens(self, player_state: dict):
-        """``(tokens (B, 1 + max_bench, D), mask (B, 1 + max_bench))`` — one vector per
-        board slot, *before* the pooling in ``forward``.
-
-        ``forward`` mean+sum pools the bench because a board is a set, which is right for
-        summarising it. It is wrong for *targeting*: an option that names a slot carries
-        only ``in_play_index``, so once the per-slot vectors are pooled nothing downstream
-        can answer "how much energy is already on the Pokemon this option points at". That
-        is measurable — the clone stacks a second energy onto an already-energised
-        Munkidori on 11.2% of such decisions against the pilots' 1.5%, because the
-        distinction is absent from its input, not because the corpus taught it.
-
-        Slot 0 is the active Pokemon, slots 1.. are the bench in ``in_play_index`` order,
-        which is exactly the addressing options use. No new parameters: this reuses the
-        same ``PokemonEncoder`` the pooled path already runs.
-        """
         active = (
             self.pokemon(player_state["active_pokemon"])
             * player_state["active_pokemon"]["present"].unsqueeze(-1)
@@ -758,9 +641,6 @@ class PlayerStateEncoder(nn.Module):
 
 
 class OpponentHistoryEncoder(nn.Module):
-    """Per-opponent-turn diffs — a temporal sequence, so ``TransformerEncoder``
-    again, with each turn's ragged card/Pokémon lists mean-pooled first."""
-
     def __init__(self, dim=D, nhead=2, layers=8, dropout=DEFAULT_DROPOUT, ff_mult=2):
         super().__init__()
         self.dim = dim
@@ -1066,31 +946,9 @@ def selection_counts(features: dict) -> tuple[torch.Tensor, torch.Tensor]:
 
 
 class PolicyNetwork(nn.Module):
-    """Fuses every feature group into one state vector, then scores the
-    current decision's options against it (a pointer-style classifier over
-    a variable-size option set, not a fixed action space).
-
-    Two stages condition the options on the turn *so far* rather than on a
-    static state: ``DecisionChainEncoder`` runs causally and is read out at
-    the most recent step, and ``OptionCrossAttention`` then lets each option
-    query the state and every step of that prefix directly. The output stays
-    a pointer over legal options — a fixed action vocabulary could not
-    express which board Pokémon an option targets, and the mask on the
-    logits below is what excludes illegal plays.
-    """
-
     def __init__(self, dim=D, dropout=DEFAULT_DROPOUT, nhead=2, chain_layers=8,
                  hist_layers=8, ctx_layers=2, cross_layers=2, ff_mult=2,
                  board_tokens=False, type_conditioned=False):
-        """Capacity is plumbed rather than hardcoded, so a run can be reproduced from
-        its saved args. Every default reproduces the 2.68M-parameter network exactly.
-
-        Widening ``dim`` is *not* checkpoint-compatible — nothing in this repo loads a
-        state_dict across a shape change — while ``nhead`` is completely free (attention
-        projections are ``(3*dim, dim)`` regardless of head count) and extra layers only
-        add keys, which ``--init-from`` tolerates. So a warm-startable capacity bump means
-        depth and heads; a width change means training from scratch.
-        """
         super().__init__()
         self.dim = dim
         self.arch = {"dim": dim, "nhead": nhead, "chain_layers": chain_layers,
@@ -1152,33 +1010,6 @@ class PolicyNetwork(nn.Module):
 
     @staticmethod
     def _named_slot(options: dict) -> torch.Tensor:
-        """``(B, N)`` board address each option names, or ``NO_SLOT`` for none.
-
-        An option names a Pokemon through **either** of two pointer pairs, and which one
-        it uses is decided by the option type, not by anything the model can infer:
-
-        ``in_play_area``/``in_play_index`` — the Pokemon an ATTACH lands on or an EVOLVE
-        evolves. Always the deciding player's own board (the engine leaves
-        ``playerIndex`` unset on these, so ``targets_opponent`` reads as "unknown").
-
-        ``area``/``index`` — the Pokemon a CARD, ABILITY, ENERGY, ENERGY_CARD or
-        TOOL_CARD option acts on, whenever that ``area`` is ACTIVE or BENCH. Here the
-        side is real and load-bearing: measured over 29,021 corpus decisions, CARD
-        options name the *opponent's* board on 14,366 of 26,538 such slots (54%) — a
-        gust target, an attack target, a damage-counter placement.
-
-        Only the first pair was read before, which addressed ATTACH and EVOLVE (35,740
-        option slots) and left every Pokemon-naming option of the second kind on
-        ``NO_SLOT`` — 31,830 slots, 47% of all Pokemon-naming options, and concentrated
-        in CARD, which is 45.4% of everything the expert picks. Those options were
-        therefore aliased onto one shared "names nothing" address, exactly the blindness
-        ``board_tokens`` was added to remove, for nearly half the cases.
-
-        ``in_play_*`` wins where both are set, since that pair is the *target* of the
-        play while ``area``/``index`` is then the source card being moved. No option type
-        in the corpus sets ``in_play_area`` to a board area and also names a Pokemon
-        through ``area``, so the precedence is a guard, not a live choice.
-        """
         def board_pointer(area: torch.Tensor, index: torch.Tensor) -> tuple:
             on_board = (area == AreaType.ACTIVE) | (area == AreaType.BENCH)
             # A bench pointer needs a real index; the active slot is addressed by area
@@ -1207,13 +1038,6 @@ class PolicyNetwork(nn.Module):
         return slot
 
     def _address_board(self, features: dict, option_vecs: torch.Tensor):
-        """Tag options and board slots with a shared address, and return the slots.
-
-        Matching addresses is what lets cross-attention route an option to the Pokemon
-        it targets rather than to a pooled average; ``_named_slot`` is the option side of
-        that address, and options naming no Pokemon get ``NO_SLOT`` so they are not
-        silently aliased onto the active slot.
-        """
         options = features["decision_context"]["options"]
         option_vecs = option_vecs + self.slot_embed(self._named_slot(options))
 
@@ -1234,34 +1058,11 @@ class PolicyNetwork(nn.Module):
         return self.logits_and_state(features)[0]
 
     def logits_and_state(self, features: dict):
-        """``(logits, state, options_mask)`` — the whole forward pass, plus the fused
-        state vector it went through, with masked options at ``-inf``.
-
-        The pass is split into ``encode`` and ``score_options`` rather than written out
-        once here, because three other places need to reach into the middle of it: the
-        serving bundles wrap this network in an ``ActorCritic`` whose ``value``/``stop``
-        heads read the fused state, and PPO's copy needs the logits left *finite* on
-        masked positions. All three used to re-derive the pass by hand instead.
-
-        Two implementations of one forward is not a style problem here, it is a
-        train/serve mismatch waiting to happen, and it had already happened — every
-        hand-written copy predates ``_address_board``, so a ``board_tokens`` checkpoint
-        was *served with its board addressing silently disabled*, scoring options against
-        a mean-pooled bench exactly as if the flag had been off. Nothing errors; the
-        weights load and the agent plays slightly worse than the one that was measured.
-        Adding the type-conditioned head would have broken the same way.
-
-        So the pass lives here once, in the two methods below, and every caller composes
-        them. Anything a head outside this class needs must come out of them, not be
-        recomputed.
-        """
         state, option_vecs, options_mask = self.encode(features)
         logits = self.score_options(option_vecs, state, features)
         return logits.masked_fill(~options_mask, float("-inf")), state, options_mask
 
     def encode(self, features: dict):
-        """``(state (B, D), option_vecs (B, N, D), options_mask (B, N))`` — everything up
-        to the scoring head, including the board addressing and cross-attention."""
         ctx_pooled, option_vecs, options_mask = self.decision_context(features["decision_context"])
         # The chain is encoded before the fuse (not inside the cat) because its
         # per-step states are needed again *after* it, as cross-attention
@@ -1300,13 +1101,6 @@ class PolicyNetwork(nn.Module):
         return state, option_vecs, options_mask
 
     def score_options(self, option_vecs, state, features: dict):
-        """``(B, N)`` logits, **unmasked** — the scoring head on its own.
-
-        Left unmasked because PPO's sequential decode masks per step and needs these
-        finite (an ``-inf`` here poisons the autograd graph the moment a row has a step
-        with everything masked out). ``logits_and_state`` applies the mask for every
-        other caller.
-        """
         # The concatenated query is kept on top of the cross-attention: pre-LN
         # blocks are residual, so an untrained ``option_cross`` starts as
         # near-identity and this remains exactly the old scoring path at

@@ -54,12 +54,6 @@ OWN_FRAMES = "own_frames"
 
 @dataclass(frozen=True)
 class ObservationSpec:
-    """Every choice that has to be identical between training and serving.
-
-    Frozen because a spec silently mutating between the two is the failure
-    this module exists to prevent; use ``replace(spec, ...)`` for a variant.
-    """
-
     opponent_history_size: int = 60
     decision_chain_size: int = 60
     opponent_history_source: str = OWN_FRAMES
