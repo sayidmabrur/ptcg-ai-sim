@@ -1,17 +1,3 @@
-"""Play random vs random and run ``BoardExtractor`` on every decision, to see what it produces.
-
-    python model_v1/feature_extractor/board_extractor_probe.py
-    python model_v1/feature_extractor/board_extractor_probe.py --games 3 --deck1 ./decks/opponents/crustle.csv
-    python model_v1/feature_extractor/board_extractor_probe.py --show 40     # print decision 40's arrays and table
-
-Every decision becomes 22 rows (one per board slot) in a CSV with the columns
-of ``board_state_preprocessed_example.csv``, plus game/step/seat/select context
-so rows from the same turn can be told apart. The rows are decoded *from the
-arrays* the model will see, so the CSV shows the transformed data, not the raw
-observation. Each decision is also checked against the raw observation, and
-any mismatch is reported at the end.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -61,8 +47,8 @@ def check(extractor: BoardExtractor, obs: dict, features: dict[str, np.ndarray])
         arr = features[key]
         if arr.shape != shape or arr.dtype != dtype:
             problems.append(f"{key}: got {arr.shape} {arr.dtype}, want {shape} {np.dtype(dtype)}")
-    for key in ("card_ids", "tools", "energies"):
-        if features[key].min() < 0 or features[key].max() >= extractor.card_vocab_size:
+    for key in ("input_ids", "tools", "energies"):
+        if features[key].min() < 0 or features[key].max() >= extractor.vocab_size:
             problems.append(f"{key}: index out of card vocab")
 
     cur = obs["current"]
@@ -79,29 +65,29 @@ def check(extractor: BoardExtractor, obs: dict, features: dict[str, np.ndarray])
             problems.append(f"seat {seat} bench has {len(player['bench'])} > {MAX_BENCH} Pokémon")
         for slot in [active_slot] + list(range(bench_slot, bench_slot + MAX_BENCH)):
             pokemon = expected.get(slot, "empty")
-            got = features["card_ids"][slot]
+            got = features["input_ids"][slot]
             if pokemon == "empty":
                 if got != 0:
-                    problems.append(f"slot {slot}: should be empty, holds {extractor.card_vocab[got]}")
+                    problems.append(f"slot {slot}: should be empty, holds {extractor.vocab[got]}")
             elif pokemon is not None and got != extractor._card_index(pokemon["id"]):
-                problems.append(f"slot {slot}: card {extractor.card_vocab[got]}, obs has id {pokemon['id']}")
+                problems.append(f"slot {slot}: card {extractor.vocab[got]}, obs has id {pokemon['id']}")
             elif pokemon is not None:
                 row = decoded[slot]
                 if row["hp"] != pokemon["hp"] or row["appear_this_turn"] != pokemon["appearThisTurn"]:
                     problems.append(f"slot {slot}: hp/appear_this_turn mismatch")
-        available = [features["slot_mask"][bench_slot + i] for i in range(MAX_BENCH)]
+        available = [features["card_masks"][bench_slot + i] for i in range(MAX_BENCH)]
         if available != [i < player["benchMax"] for i in range(MAX_BENCH)]:
-            problems.append(f"seat {seat}: bench slot_mask {available} disagrees with benchMax {player['benchMax']}")
-        if not features["slot_mask"][active_slot]:
+            problems.append(f"seat {seat}: bench card_masks {available} disagrees with benchMax {player['benchMax']}")
+        if not features["card_masks"][active_slot]:
             problems.append(f"slot {active_slot}: Active slot masked")
-    if not features["slot_mask"][STADIUM_IN_PLAY:].all():
+    if not features["card_masks"][STADIUM_IN_PLAY:].all():
         problems.append("stadium / per-turn slots must never be masked")
-    if bool(cur["stadium"]) != bool(features["card_ids"][STADIUM_IN_PLAY]):
+    if bool(cur["stadium"]) != bool(features["input_ids"][STADIUM_IN_PLAY]):
         problems.append("stadium slot does not match obs")
     for slot, flag in ((19, "supporterPlayed"), (20, "energyAttached"), (21, "stadiumPlayed")):
-        if cur[flag] and features["card_ids"][slot] == 1:  # <HIDDEN>: flag set, but the card was not found in logs
+        if cur[flag] and features["input_ids"][slot] == 1:  # <HIDDEN>: flag set, but the card was not found in logs
             problems.append(f"slot {slot}: {flag} is set but the played card was not found in the logs")
-        if cur[flag] != bool(features["card_ids"][slot]):
+        if cur[flag] != bool(features["input_ids"][slot]):
             problems.append(f"slot {slot}: filled disagrees with {flag}")
     return problems
 
@@ -135,7 +121,7 @@ def play(extractor, deck0, deck1, rng, game, writer, show_step, problems) -> tup
     try:
         while obs["current"]["result"] == -1 and steps < MAX_STEPS:
             if obs.get("current") is not None and obs.get("select") is not None:
-                features = extractor(obs)
+                features = extractor.encode(obs)
                 for p in check(extractor, obs, features):
                     problems.append(f"game {game} step {steps}: {p}")
                 if steps == show_step and game == 1:
@@ -169,7 +155,7 @@ def main() -> None:
     rng = random.Random(args.seed)
     deck0, deck1 = build_deck(args.deck0), build_deck(args.deck1)
     extractor = BoardExtractor(normalize=not args.raw)
-    print(f"card vocab size: {extractor.card_vocab_size}, slots: {N_SLOTS}")
+    print(f"card vocab size: {extractor.vocab_size}, slots: {N_SLOTS}")
 
     problems: list[str] = []
     fieldnames = ["game", "step", "seat", "select_context"] + CSV_COLUMNS
