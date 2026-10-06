@@ -1,46 +1,3 @@
-"""Battle logs: every game the simulator plays, saved as one Parquet file.
-
-    replays/<YYYY-MM-DD>/<Alice>_vs_<Bob>_<YYYY-MM-DD>_<unix time>.parquet
-
-What is stored is the Kaggle episode replay -- the ``cabt`` environment's JSON,
-the format of ``sample_battle_log.json`` and of the ~10^5 ladder replays the
-training corpus is built from -- so a game played here is a training episode
-like any other. ``load(path)`` gives back that JSON's dict, and
-``build_corpus.episode_rows`` reads it unchanged.
-
-Why Parquet rather than the JSON itself
----------------------------------------
-The JSON is ~3.9 MB a game and almost all of it is repetition: the waiting
-seat's observation is copied into every frame, and ``visualize`` restates the
-whole board once per step. Measured on ``sample_battle_log.json``:
-
-    raw JSON                    3,851,745 bytes
-    JSON + gzip -9                 90,755
-    JSON + zstd -19                41,644
-    this file (zstd -19)           52,703   everything, visualize included
-
-JSON+zstd is a little smaller, but this file is columnar: ``step``, ``seat``,
-``status``, ``reward`` and ``action`` can be read on their own (pandas, DuckDB,
-pyarrow) without decoding a single observation, which is what "how did this
-game go" and corpus filtering want -- and it is the same format the corpus is.
-
-Layout: one row per (step, seat), in step order, both seats of a step together.
-
-    step, seat          int16, int8
-    status              ACTIVE / INACTIVE / DONE / INCOMPLETE, as the replay says
-    reward              the seat's reward in that frame (+1/-1/0 at the end)
-    action              the option indexes the seat submitted this step
-                        (its 60-card deck, at step 1)
-    observation         the seat's observation JSON, or null when it is the
-                        same as the seat's previous one -- a waiting seat keeps
-                        its last observation, as in the Kaggle replay
-    visualize           the full-information frame for this step (both hands,
-                        deck order): the engine's own VisualizeData, on seat 0
-
-The episode header (id, names, decks, rewards, mode, ...) is the file's schema
-metadata under ``episode``.
-"""
-
 from __future__ import annotations
 
 import json
@@ -77,7 +34,6 @@ def _compact(obj) -> str:
 
 
 def _slug(name: str) -> str:
-    """A player name as it can appear in a file name."""
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", name.strip()).strip("-.")
     return slug[:24] or "player"
 
@@ -136,8 +92,6 @@ class Recorder:
                 columns["action"].append(record["action"])
                 columns["observation"].append(None if obs == seen[seat] else obs)
                 seen[seat] = obs
-                # The engine's frame k is the position after step k+1 (frame 0
-                # follows the decks), as in the Kaggle replay's visualize list.
                 v = visualize[step - 1] if visualize and seat == 0 and 1 <= step <= len(visualize) else None
                 columns["visualize"].append(_compact(v) if v is not None else None)
 
@@ -148,19 +102,15 @@ class Recorder:
             "name": "cabt",
             "title": "Card Battle",
             "version": "1.0.0",
-            "module_version": None,         # not played through kaggle-environments
+            "module_version": None,
             "schema_version": 1,
             "description": "Limited Card Battle.",
-            # An integer id, as the corpus builder sorts and groups by it: the
-            # start time in milliseconds, which cannot collide with Kaggle's
-            # ~10^8 episode ids.
             "info": {"Agents": [{"Name": n, "ThumbnailUrl": None} for n in self.names],
                      "TeamNames": self.names, "EpisodeId": int(self.started * 1000),
                      "LiveVideoPath": None},
             "rewards": rewards,
             "statuses": [last[0]["status"], last[1]["status"]],
             "configuration": {"episodeSteps": len(self.frames)},
-            # Beyond the Kaggle header: how and where this game was played.
             "simulator": {"mode": self.mode, "decks": self.decks, "started": stamp,
                           "ended": int(time.time()), "finished": finished,
                           "winner": self.names[result] if result in (0, 1) else None},
@@ -170,7 +120,7 @@ class Recorder:
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{_slug(self.names[0])}_vs_{_slug(self.names[1])}_{day}_{stamp}.parquet"
         n = 1
-        while path.exists():                 # two games started in the same second
+        while path.exists():
             path = path.with_name(f"{path.stem}_{n}.parquet")
             n += 1
         pq.write_table(table, path, compression="zstd", compression_level=COMPRESSION_LEVEL)
@@ -179,7 +129,6 @@ class Recorder:
 
 
 def load(path: str | Path) -> dict:
-    """A saved game as the Kaggle episode dict (``sample_battle_log.json``'s shape)."""
     table = pq.read_table(path)
     header = json.loads(table.schema.metadata[b"episode"])
     rows = table.to_pylist()
@@ -206,7 +155,6 @@ def load(path: str | Path) -> dict:
 
 
 def summary(path: str | Path) -> dict:
-    """The header alone, without reading any observation."""
     return json.loads(pq.read_schema(path).metadata[b"episode"])
 
 

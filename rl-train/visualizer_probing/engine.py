@@ -1,24 +1,3 @@
-"""Battle plumbing: one live ``cg`` battle, driven seat by seat.
-
-Two facts about the native engine shape everything here.
-
-*One battle per process.* ``cg.sim.Battle`` parks the battle pointer on a class
-attribute, so a process can hold exactly one battle at a time. The server is
-therefore single-game and serialises every request through a lock rather than
-handing out session objects.
-
-*Observations are already seat-filtered.* ``GetBattleData`` emits JSON for the
-player whose turn it is to choose, with the other seat's hand, deck and prizes
-erased (``State::erasePlayerData`` / ``ToJson.h``). That is the whole
-imperfect-information story: the browser is only ever fed observations taken
-from the *human* seat, so the agent's hand, deck order and prize identities
-never cross the wire. Nothing here re-adds them.
-
-This copy (``rl-train/visualizer_probing/``) runs the training engine itself:
-``rl-train/engine/cg``, imported as ``cg``, so what is replayed here is exactly
-the game the agents are trained on. Decklists are in ``decks/``.
-"""
-
 from __future__ import annotations
 
 import json
@@ -28,8 +7,6 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
-# The game engine is rl-train/engine/cg, imported as ``cg`` (rl-train/ itself
-# cannot go on the path: its ``engine`` package would collide with engine.py here).
 _RL_ENGINE = _HERE.parent / "engine"
 if str(_RL_ENGINE) not in sys.path:
     sys.path.insert(0, str(_RL_ENGINE))
@@ -43,10 +20,6 @@ from cg.sim import Battle as _CgBattle, lib as _lib  # noqa: E402
 import render  # noqa: E402
 import replay_log  # noqa: E402
 from cg.game import visualize_data  # noqa: E402
-# ``cg.game.battle_select`` collapses every engine rejection into a bare
-# ``IndexError``, which reaches the player as an empty error message and looks
-# like a button that simply does not work. The same call is made here so the
-# engine's own code survives — these are ``State::checkPlayerSelect``'s codes.
 SELECT_ERRORS = {
     3: "the match is already over",
     4: "wrong number of options chosen for this selection",
@@ -57,7 +30,6 @@ SELECT_ERRORS = {
 
 
 def raw_select(indices: list[int]) -> dict:
-    """``lib.Select`` with the error code preserved; returns the next observation."""
     arg = (ctypes.c_int * len(indices))(*indices)
     error = _lib.Select(_CgBattle.battle_ptr, arg, len(indices))
     if error:
@@ -66,7 +38,6 @@ def raw_select(indices: list[int]) -> dict:
 
 DECK_SIZE = 60
 
-# Decklists that ship with the repo, by the name the UI shows.
 DECK_DIR = _HERE / "decks"
 DECKS = {
     "Crustle": DECK_DIR / "crustle.csv",
@@ -74,7 +45,6 @@ DECKS = {
     "Alakazam": DECK_DIR / "alakazam.csv",
     "Mega Lucario ex": DECK_DIR / "mega_lucario_ex.csv",
     "Dragapult": DECK_DIR / "dragapult.csv",
-    # 2026 archetypes built on Chaos Rising / Pitch Black cards (CardImplExtra.h).
     "Mega Excadrill ex": DECK_DIR / "mega_excadrill_ex.csv",
     "Bastiodon / Rampardos ex": DECK_DIR / "bastiodon_rampardos_ex.csv",
     "Iron Thorns ex / Bastiodon": DECK_DIR / "iron_thorns_bastiodon.csv",
@@ -84,9 +54,6 @@ DECKS = {
     "Mega Chandelure ex": DECK_DIR / "mega_chandelure_ex.csv",
 }
 
-# The deck-legality rules the engine enforces at ``BattleStart`` (Api.h). They
-# are repeated here so a deck can be checked *before* a battle is started and
-# the reason shown next to the offending card, rather than as a start failure.
 DECK_SAME_CARD_MAX = 4
 ACE_SPEC_MAX = 1
 
@@ -96,7 +63,6 @@ def deck_names() -> list[str]:
 
 
 def deck_check(cards: list[int], card_db: dict[int, dict]) -> list[str]:
-    """Every rule the deck breaks, in the engine's own terms; empty if legal."""
     problems = []
     if len(cards) != DECK_SIZE:
         problems.append(f"{len(cards)}/60 cards")
@@ -117,7 +83,6 @@ def deck_check(cards: list[int], card_db: dict[int, dict]) -> list[str]:
 
     for name, count in sorted(by_name.items()):
         data = next((c for c in card_db.values() if c["name"] == name), None)
-        # The four-copy limit is by card *name*, and Basic Energy is exempt.
         if count > DECK_SAME_CARD_MAX and (data or {}).get("cardType") != 5:
             problems.append(f"{count} copies of {name} (max {DECK_SAME_CARD_MAX})")
     if ace_specs > ACE_SPEC_MAX:
@@ -148,12 +113,8 @@ START_ERRORS = {
 }
 
 
-# Zones only their owner can see into. A card whose *destination* is one of
-# these keeps its identity secret; a card landing anywhere else is face-up on
-# the table and public to both seats.
-_PRIVATE_AREAS = {1, 2, 6, 12}          # deck, hand, prize, the cards you are looking at
+_PRIVATE_AREAS = {1, 2, 6, 12}
 
-# Everything the table can see happen, whoever did it.
 _PUBLIC_TYPES = {
     LogType.SHUFFLE, LogType.HAS_BASIC_POKEMON, LogType.TURN_START, LogType.TURN_END,
     LogType.DRAW_REVERSE, LogType.MOVE_CARD_REVERSE, LogType.SWITCH, LogType.CHANGE,
@@ -162,24 +123,10 @@ _PUBLIC_TYPES = {
     LogType.PARALYZED, LogType.CONFUSED, LogType.COIN,
 }
 
-# Log entries that name a card the acting seat alone can see.
 _REDACT = {LogType.DRAW: LogType.DRAW_REVERSE, LogType.MOVE_CARD: LogType.MOVE_CARD_REVERSE}
 
 
 def public_logs(logs: list[dict], hidden_seat: int) -> list[dict]:
-    """``logs`` as a viewer who is not ``hidden_seat`` may see them.
-
-    Reached only through the losing seat's final observation, which is the one
-    place the human's own view never arrives: when the match ends on the agent's
-    turn, this is the only record of the attack that ended it.
-
-    Dropping everything attributed to that seat — which is what this used to do
-    — threw the decisive turn away with it, so the game ended in silence with
-    the board already rearranged. Public actions are kept instead, and only the
-    two entry types that can name a card the other seat cannot see are reduced
-    to their face-down forms: a draw, and a move *into* a private zone. An
-    unfamiliar entry type is still dropped rather than guessed at.
-    """
     keep = []
     for entry in logs:
         kind = entry.get("type")
@@ -204,11 +151,7 @@ def public_logs(logs: list[dict], hidden_seat: int) -> list[dict]:
     return keep
 
 
-
-
-
 def _record(recorder, seat: int, choice: list[int], obs: dict) -> None:
-    """Log one selection, and write the replay the moment the game is over."""
     if recorder is None:
         return
     recorder.selection(seat, choice, obs)
@@ -218,7 +161,6 @@ def _record(recorder, seat: int, choice: list[int], obs: dict) -> None:
 
 
 def _save(recorder, result: int) -> None:
-    """Write the replay; a failure to write must never cost anyone their game."""
     if recorder is None or recorder.saved is not None:
         return
     try:
@@ -251,19 +193,18 @@ class Battle:
         seat_names = [None, None]
         seat_names[human_seat], seat_names[1 - human_seat] = names
         self.recorder = replay_log.Recorder(seat_names, decks, "vs_agent", obs)
-        self.obs = obs                 # the most recent observation, whoever it belongs to
-        self.view_obs: dict | None = None   # the most recent *human* observation
-        self.pending_logs: list[dict] = []   # human-visible events not yet drawn
-        self.pending_steps: list[dict] = []  # board after each agent decision
-        self._agent_trail: list[dict] = []    # the agent's turn, in case the match ends inside it
-        self._trail_open = False             # ...and whether it has started collecting
-        self._delivered = 0                  # log entries handed to the browser since the agent moved
+        self.obs = obs
+        self.view_obs: dict | None = None
+        self.pending_logs: list[dict] = []
+        self.pending_steps: list[dict] = []
+        self._agent_trail: list[dict] = []
+        self._trail_open = False
+        self._delivered = 0
         self.finished = False
         self.result = -1
         if hasattr(agent, "reset"):
             agent.reset(0)
 
-    # -- driving --------------------------------------------------------
 
     @property
     def acting_seat(self) -> int:
@@ -279,15 +220,11 @@ class Battle:
         if self.acting_seat == self.human_seat:
             self.view_obs = self.obs
             self.pending_logs.extend(logs)
-            # The human's own view supersedes the trail: it covers the same
-            # entries, unredacted, and keeping both would show the turn twice.
             self._agent_trail.clear()
             self._trail_open = False
             return
 
         if not self._trail_open:
-            # This first observation of the agent's turn reaches back over what
-            # the browser already holds; only what follows is new.
             logs = logs[self._delivered:]
             self._trail_open = True
         self._agent_trail.extend(public_logs(logs, self.agent_seat))
@@ -297,13 +234,9 @@ class Battle:
             self._trail_open = False
 
     def advance(self) -> None:
-        # What the browser already holds of the agent's first observation: that
-        # observation reaches back to the agent's previous decision, over
-        # everything delivered since.
         shown = self._delivered
         self._absorb()
         first = self.obs.get("logs") or []
-        # Whatever is left is what the human's own action just wrote.
         self._snapshot(wrote=max(0, len(first) - shown))
         while not self.finished and self.acting_seat == self.agent_seat:
             select = self.obs["select"]
@@ -313,10 +246,6 @@ class Battle:
             self.obs = raw_select(list(choice))
             _record(self.recorder, self.agent_seat, list(choice), self.obs)
             self._absorb()
-            # The observation that follows a decision spans exactly what that
-            # decision wrote — unless the agent's turn is over, in which case it
-            # is the human's own view and spans the whole batch. That last one
-            # is what the remainder is for.
             wrote = len(self.obs.get("logs") or []) if self.acting_seat == self.agent_seat else None
             self._snapshot(wrote=wrote)
             self._delivered = 0
@@ -340,11 +269,6 @@ class Battle:
             raise ValueError("duplicate selections")
         if any(not 0 <= i < len(select["option"]) for i in choice):
             raise ValueError("option index out of range")
-        # The board as it stands *before* the choice is applied. Without it the
-        # batch opens on the position the human's own action already reached —
-        # the browser draws that first, so an attack showed its damage and swept
-        # the Knocked Out Pokémon into the discard before the attack itself was
-        # ever animated. The events then narrate a board that has already moved.
         self._snapshot(wrote=0)
         self.obs = raw_select(list(choice))
         _record(self.recorder, self.human_seat, list(choice), self.obs)
@@ -352,9 +276,6 @@ class Battle:
 
     def take_logs(self) -> list[dict]:
         logs, self.pending_logs = self.pending_logs, []
-        # What the browser has been given since the agent last moved: the
-        # agent's next observation reaches back over all of it, and ``advance``
-        # subtracts it to find what the human's own action wrote.
         self._delivered += len(logs)
         return logs
 
@@ -366,8 +287,6 @@ class Battle:
         counts = [step.pop("_wrote") for step in steps]
         known = sum(n for n in counts if n is not None)
         unknown = [i for i, n in enumerate(counts) if n is None]
-        # Share whatever the measured decisions did not account for among the
-        # steps whose own count the engine could not give us.
         spare = max(0, len(logs) - known)
         for i in unknown:
             counts[i] = spare if i == unknown[-1] else 0
@@ -377,12 +296,12 @@ class Battle:
             slice_ = logs[at:at + count]
             at += count
             step["events"] = render.log_events(slice_, self.human_seat)
-        if at < len(logs):                       # anything unaccounted for is still shown
+        if at < len(logs):
             steps[-1]["events"].extend(render.log_events(logs[at:], self.human_seat))
         return steps
 
     def close(self) -> None:
-        _save(self.recorder, self.result)      # a game left unfinished is kept too
+        _save(self.recorder, self.result)
         battle_finish()
         if hasattr(self.agent, "close"):
             self.agent.close()
@@ -398,12 +317,12 @@ class PvpBattle:
         self.obs = obs
         self.finished = False
         self.result = -1
-        self._count = 0                      # events delivered to anyone so far
-        self._seen = [0, 0]                  # ...as of each seat's last own observation
+        self._count = 0
+        self._seen = [0, 0]
         self.own_obs: list[dict | None] = [None, None]
         self._logs: list[list[dict]] = [[], []]
         self._steps: list[list[dict]] = [[], []]
-        self.version = 0                     # bumps on every change either seat can see
+        self.version = 0
         self._absorb()
 
     @property
@@ -443,8 +362,6 @@ class PvpBattle:
             raise ValueError("duplicate selections")
         if any(not 0 <= i < len(select["option"]) for i in choice):
             raise ValueError("option index out of range")
-        # Both seats get the board as it stood before the choice, so either one's
-        # replay starts from the position the move was made in (see Battle.select).
         for s in (0, 1):
             self._steps[s].append({"board": render.board_snapshot(self.obs, s), "events": []})
         self.obs = raw_select(list(choice))
@@ -454,8 +371,6 @@ class PvpBattle:
     def take(self, seat: int) -> tuple[list[dict], list[dict]]:
         logs, self._logs[seat] = self._logs[seat], []
         steps, self._steps[seat] = self._steps[seat], []
-        # A poll with nothing new would otherwise hand back a lone board; the
-        # browser draws the current position anyway.
         if not any(step["events"] for step in steps):
             steps = []
         return logs, steps

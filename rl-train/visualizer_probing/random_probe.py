@@ -1,15 +1,3 @@
-"""Play random agent vs random agent and save each game as a replay the browser can watch.
-
-    python random_probe.py                                    # one game, main_agent vs alakazam
-    python random_probe.py --games 5 --deck1 ./decks/opponents/crustle.csv
-    python server.py --port 8000                              # then: Watch replays
-
-Every game is recorded with ``replay_log.Recorder`` -- the format the simulator
-writes for games played in the browser -- so the replay viewer shows each
-decision on a full board with both hands face up, plus the raw observation
-behind it (the "Raw data" panel).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -20,27 +8,24 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
-sys.path.insert(0, str(_HERE.parent))           # rl-train/, for helpers.helper
-sys.path.insert(0, str(_HERE.parent / "engine"))  # rl-train/engine/, the game engine as ``cg``
+sys.path.insert(0, str(_HERE.parent))
+sys.path.insert(0, str(_HERE.parent / "engine"))
 
 from helpers.helper import build_deck  # noqa: E402
 from cg.game import battle_finish, battle_select, battle_start, visualize_data  # noqa: E402
 
 import replay_log  # noqa: E402
 
-# A random game that loops (e.g. both seats passing forever) is cut off here.
 MAX_STEPS = 5000
 
 
 def random_choice(select: dict, rng: random.Random) -> list[int]:
-    """A legal selection: between minCount and maxCount distinct option indexes."""
     n_options = len(select["option"])
     count = rng.randint(select["minCount"], min(select["maxCount"], n_options))
     return rng.sample(range(n_options), count)
 
 
 def play(deck0: list[int], deck1: list[int], names: list[str], rng: random.Random) -> tuple[int, int, Path | None]:
-    """One game to the end; returns (result, steps, replay path)."""
     obs, start = battle_start(deck0, deck1)
     if obs is None:
         raise ValueError(f"player {start.errorPlayer}'s deck is illegal (error {start.errorType})")

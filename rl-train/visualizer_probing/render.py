@@ -1,10 +1,3 @@
-"""Turn a raw ``cg`` observation into a JSON view model for the browser.
-
-The engine speaks integers (card ids, attack ids, enum ordinals); everything the
-UI needs to draw a board and label a choice is resolved here so the client stays
-a dumb renderer.
-"""
-
 from __future__ import annotations
 
 import json
@@ -16,8 +9,6 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
-# The game engine is rl-train/engine/cg, imported as ``cg`` (rl-train/ itself
-# cannot go on the path: its ``engine`` package would collide with engine.py here).
 _RL_ENGINE = _HERE.parent / "engine"
 if str(_RL_ENGINE) not in sys.path:
     sys.path.insert(0, str(_RL_ENGINE))
@@ -74,17 +65,7 @@ PROMPT = {
 }
 
 
-# Card art, one file per card id, served by the app at ``/cards/``. Every id in
-# the engine's table has one today; a missing file simply falls back to the
-# text-only card in the browser, so this must stay a lookup rather than a
-# guessed URL.
 def _image_dir() -> Path:
-    """Where the card scans live.
-
-    Looked up rather than hard-coded so the art can sit beside the simulator, in
-    the repo root as it does today, or anywhere ``PTCG_CARD_IMAGES`` points —
-    683 MB of scans is the one part of this that may not travel with the code.
-    """
     env = os.environ.get("PTCG_CARD_IMAGES")
     candidates = [Path(env)] if env else []
     candidates += [_HERE / "card_images_en", _HERE.parent / "card_images_en"]
@@ -135,7 +116,6 @@ def _enum_name(enum_cls, value, default="?"):
 
 
 def card_info(card_id: int | None) -> dict:
-    """Static card data, shaped for the front-end card component."""
     if card_id is None:
         return {"id": None, "name": "Face-down", "kind": "hidden", "facedown": True, "image": None}
     data = card_db().get(card_id)
@@ -190,15 +170,6 @@ def pokemon_view(mon: dict | None) -> dict | None:
 
 
 def facedown_view() -> dict:
-    """A Pokémon that is in play but face-down.
-
-    The engine says these are different things: an *empty* Active Spot is
-    ``active == []``, while a face-down Pokémon standing in it is
-    ``active == [None]`` — which is where both players are during Set Up, and
-    where the opponent stays until the reveal. Collapsing the two made the board
-    look empty for the whole of Set Up and the Pokémon appear from nowhere when
-    the first turn began.
-    """
     return card_info(None)
 
 
@@ -232,7 +203,6 @@ def _hand_name(state: dict, index: int | None) -> str:
 
 
 def _in_play_target(state: dict, option: dict, seat: int) -> str | None:
-    """Name of the Pokémon an ``inPlay*`` option lands on, with its spot."""
     area = option.get("inPlayArea")
     index = option.get("inPlayIndex")
     if area is None or index is None:
@@ -246,7 +216,6 @@ def _in_play_target(state: dict, option: dict, seat: int) -> str | None:
 
 
 def _board_pokemon(state: dict, option: dict, seat: int) -> dict | None:
-    """The raw in-play Pokémon an option points at, attachments included."""
     owner = option.get("playerIndex")
     owner = seat if owner is None else owner
     area = option.get("area") if option.get("area") is not None else option.get("inPlayArea")
@@ -261,7 +230,6 @@ def _board_pokemon(state: dict, option: dict, seat: int) -> dict | None:
 
 
 def _board_card(state: dict, option: dict, seat: int) -> dict | None:
-    """The card an option points at, resolved through the board it sits on."""
     owner = option.get("playerIndex")
     owner = seat if owner is None else owner
     area = option.get("area") if option.get("area") is not None else option.get("inPlayArea")
@@ -287,27 +255,17 @@ def _board_card(state: dict, option: dict, seat: int) -> dict | None:
 
 
 def _hand_card(state: dict, index: int | None) -> dict | None:
-    """The card at a hand index, for options that name one."""
     hand = state.get("hand") or []
     if index is None or index >= len(hand):
         return None
     return card_info(hand[index]["id"])
 
 
-# The order the groups appear in the panel: what you put down, what you build
-# up, what you spend, then what ends the turn. It follows the shape of a turn
-# rather than the engine's option order, which is whatever the rules walked.
 GROUP_ORDER = ["Pokémon", "Evolve", "Energy", "Pokémon Tool", "Trainer",
                "Ability", "Attack", "Misc"]
 
 
 def option_group(option: dict, state: dict, seat: int) -> str:
-    """Which heading an option belongs under.
-
-    Grouped by what the *card* is, not by the engine's option type: playing a
-    Basic Pokémon and playing a Supporter are both ``PLAY``, and a player
-    reading the list thinks of them as different kinds of move.
-    """
     kind = option.get("type")
     me = state["players"][seat]
 
@@ -329,7 +287,6 @@ def option_group(option: dict, state: dict, seat: int) -> str:
 
 
 def option_label(option: dict, state: dict, seat: int, select: dict) -> str:
-    """A human sentence for one option, resolved against the acting seat's board."""
     kind = option.get("type")
     me = state["players"][seat]
 
@@ -346,8 +303,6 @@ def option_label(option: dict, state: dict, seat: int, select: dict) -> str:
     if kind == OptionType.PLAY:
         return f"Play {_hand_name(me, option.get('index'))}"
     if kind in (OptionType.EVOLVE, OptionType.ATTACH):
-        # These come one per (card, target) pair, so without the target every
-        # energy in hand produces a row of identical-looking options.
         card = _hand_name(me, option.get("index"))
         target = _in_play_target(state, option, seat)
         verb = "Evolve" if kind == OptionType.EVOLVE else "Attach"
@@ -359,9 +314,6 @@ def option_label(option: dict, state: dict, seat: int, select: dict) -> str:
         dmg = atk.get("damage", 0)
         return f"Attack: {atk.get('name', '?')}" + (f" ({dmg})" if dmg else "")
     if kind in (OptionType.ABILITY, OptionType.SKILL):
-        # An ABILITY option names a board location, not a card id, so the card
-        # has to be looked up where it is in play before its ability can be
-        # named -- otherwise every ability on the board reads "Ability".
         card = card_info(option["cardId"]) if option.get("cardId") else _board_card(state, option, seat)
         skills = (card or {}).get("skills") or []
         if len(skills) == 1:
@@ -374,8 +326,6 @@ def option_label(option: dict, state: dict, seat: int, select: dict) -> str:
     if kind == OptionType.SPECIAL_CONDITION:
         return _enum_name(SpecialConditionType, option.get("specialConditionType"), "Condition")
     if kind in (OptionType.ENERGY, OptionType.ENERGY_CARD, OptionType.TOOL_CARD):
-        # These name an attachment by its slot on a Pokémon in play, so both the
-        # attachment and the Pokémon carrying it have to be resolved.
         mon = _board_pokemon(state, option, seat)
         holder = card_info(mon["id"])["name"] if mon else "a Pokémon"
         if kind == OptionType.TOOL_CARD:
@@ -393,14 +343,11 @@ def option_label(option: dict, state: dict, seat: int, select: dict) -> str:
         count = option.get("count") or 1
         return f"{code} Energy on {holder}" + (f" (worth {count})" if count > 1 else "")
 
-    # CARD / TOOL_CARD / ENERGY_CARD / DISCARD reference a board location.
     if option.get("cardId") is not None:
         name = card_info(option["cardId"])["name"]
     elif option.get("area") == AreaType.HAND:
         name = _hand_name(me, option.get("index"))
     elif (board := _board_card(state, option, seat)) is not None:
-        # A Pokémon in play is identified by where it stands, not by a card id;
-        # without this every bench target would read "a card (bench)".
         name = board["name"]
     elif select.get("deck") and option.get("index") is not None:
         deck = select["deck"]
@@ -432,13 +379,6 @@ def _ref(area, index, owner, seat, serial=None) -> dict | None:
 
 
 def option_refs(option: dict, seat: int) -> list[dict]:
-    """Every board slot this option touches, so the UI can light them up.
-
-    An option can name two places at once -- ``ATTACH``/``EVOLVE`` carry the card
-    leaving your hand *and* the Pokémon it lands on -- and ``PLAY`` carries a
-    bare hand index with no area field at all, which is why this cannot just
-    read ``option["area"]``.
-    """
     kind = option.get("type")
     owner = option.get("playerIndex")
     refs = []
@@ -460,12 +400,6 @@ RESULT_REASON = {
 
 
 def log_lines(logs: list[dict], seat: int) -> list[str]:
-    """Readable one-liners for the event feed.
-
-    The entries come from a *seat-filtered* observation, so anything private to
-    the other player has already been replaced by its ``*_REVERSE`` form
-    upstream; this only has to name what it is given.
-    """
     out = []
     for entry in logs:
         kind = entry.get("type")
@@ -541,17 +475,6 @@ def log_lines(logs: list[dict], seat: int) -> list[str]:
 
 
 def log_events(logs: list[dict], seat: int) -> list[dict]:
-    """The subset of the log worth *showing* on the board, in order.
-
-    The text feed already says what happened; this is what the board should act
-    out — a card being played, an attack going off, HP moving. Each event names
-    the card by ``serial``, which is what the rendered board carries, so the
-    browser can anchor the animation to the right slot without any position
-    being sent (positions change between the event and the render anyway).
-
-    These come from the human seat's own observation, so an opponent event is
-    here only if that seat was allowed to see it.
-    """
     out = []
     for entry in logs:
         kind = entry.get("type")
@@ -576,8 +499,6 @@ def log_events(logs: list[dict], seat: int) -> list[dict]:
                 "card": card, "text": attack.get("text", ""),
             })
         elif kind == LogType.PLAY:
-            # Trainers and Energy played from hand: the one decision a player
-            # makes that leaves no lasting mark on the board.
             out.append({"kind": "play", "side": side, "card": card, "name": (card or {}).get("name")})
         elif kind == LogType.EVOLVE:
             out.append({
@@ -599,8 +520,6 @@ def log_events(logs: list[dict], seat: int) -> list[dict]:
         elif kind == LogType.COIN:
             out.append({"kind": "coin", "side": side, "name": "Heads" if entry.get("head") else "Tails"})
         elif kind in (LogType.DRAW, LogType.DRAW_REVERSE):
-            # A Supporter's whole effect is often "shuffle and draw"; without
-            # these the board just changed by itself.
             out.append({"kind": "draw", "side": side, "card": card, "name": (card or {}).get("name")})
         elif kind in (LogType.MOVE_CARD, LogType.MOVE_CARD_REVERSE):
             out.append({
@@ -609,9 +528,6 @@ def log_events(logs: list[dict], seat: int) -> list[dict]:
                 "to": AREA_LABEL.get(entry.get("toArea"), "?"),
             })
         elif kind == LogType.HAS_BASIC_POKEMON:
-            # A mulligan: no Basic Pokémon in the opening hand, so it goes back
-            # and is redrawn. Worth showing — it explains the extra card the
-            # other player draws for it.
             if not entry.get("hasBasicPokemon", True):
                 out.append({"kind": "mulligan", "side": side, "name": "Mulligan"})
         elif kind == LogType.SHUFFLE:
@@ -623,9 +539,6 @@ def log_events(logs: list[dict], seat: int) -> list[dict]:
                 "name": (active or {}).get("name"), "serial": entry.get("serialBench"),
             })
         elif kind == LogType.RESULT:
-            # The end of the match is an event like any other, so it lands as
-            # the last beat of the replay rather than as a verdict announced
-            # over a turn that is still being played out.
             result = entry.get("result")
             out.append({
                 "kind": "result",
@@ -642,27 +555,9 @@ def log_events(logs: list[dict], seat: int) -> list[dict]:
 
 
 def board_snapshot(obs: dict, seat: int) -> dict:
-    """The board as the human may see it, taken from *any* observation.
-
-    Used to capture the position after each of the agent's decisions so the
-    replay can move the board one action at a time instead of jumping to the
-    end. It is built from the agent's own observation, so it deliberately drops
-    every hand: the agent's hand is private, and the human's is not in that
-    observation at all (the engine erased it) — the browser keeps its own hand
-    from the last view it was given.
-
-    The same applies to the cards being *looked at*. The engine fills
-    ``looking`` for whoever the observation was built for (``ToJson.h`` checks
-    ``lookingPlayer`` against that seat), so an observation taken while the
-    opponent is resolving Pokégear, Recon Directive or Metal Maker names the
-    cards they are choosing among. Those must not be drawn on this seat's
-    board: the log already reduces them to "a face-down card", and a snapshot
-    that showed them would say the opposite of the feed beside it.
-    """
     state = obs["current"]
     me = player_view(state["players"][seat], reveal_hand=False)
     opp = player_view(state["players"][1 - seat], reveal_hand=False)
-    # Whose observation this is. ``looking`` in it is that seat's to see.
     observed_by = state.get("yourIndex")
     looking = state.get("looking") or [] if observed_by == seat else []
     return {
@@ -676,14 +571,6 @@ def board_snapshot(obs: dict, seat: int) -> dict:
 
 def build_view(obs: dict, seat: int, agent_name: str, pending_logs: list[dict],
                your_turn: bool, result: int) -> dict:
-    """The full payload the browser renders.
-
-    ``obs`` is always an observation taken from ``seat`` -- the human's -- even
-    while the agent is choosing, so the opponent's hand and prizes are absent
-    from the payload by construction rather than by anything hidden here. When
-    the agent holds the decision, ``your_turn`` is False and the board is simply
-    the last position the human legitimately saw.
-    """
     state = obs["current"]
     select = obs.get("select")
     your_turn = your_turn and select is not None and state["yourIndex"] == seat
@@ -706,8 +593,6 @@ def build_view(obs: dict, seat: int, agent_name: str, pending_logs: list[dict],
         "turn": state["turn"],
         "actions": state["turnActionCount"],
         "firstPlayer": state["firstPlayer"],
-        # What this turn has already spent: the four once-per-turn rights the
-        # rules give you, which the board itself cannot show.
         "flags": {
             "supporter": state["supporterPlayed"],
             "stadium": state["stadiumPlayed"],

@@ -21,12 +21,6 @@ from pathlib import Path
 
 
 def _module_defaults(bundle: Path) -> dict:
-    """Constructor defaults the bundle would build its network with.
-
-    Read out of the source with ``ast`` rather than by importing it: two bundles
-    ship two generations of a module with the same name, and importing one to
-    describe it would poison the other in the same interpreter.
-    """
     source = bundle / "policy_network" / "policy_experimental.py"
     if not source.is_file():
         return {}
@@ -41,7 +35,7 @@ def _module_defaults(bundle: Path) -> dict:
         if isinstance(node, ast.ClassDef) and node.name == "PolicyNetwork":
             for item in node.body:
                 if isinstance(item, ast.FunctionDef) and item.name == "__init__":
-                    args = item.args.args[1:]           # drop self
+                    args = item.args.args[1:]
                     pad = len(args) - len(item.args.defaults)
                     for arg, value in zip(args[pad:], item.args.defaults):
                         try:
@@ -75,7 +69,7 @@ def describe(bundle: Path) -> dict:
 
     params = sum(v.numel() for v in state.values())
     width = defaults.get("dim")
-    for key, tensor in state.items():                  # the card id embedding fixes the width
+    for key, tensor in state.items():
         if key.endswith("card.id.weight"):
             width = tensor.shape[1]
             break

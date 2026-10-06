@@ -1,28 +1,3 @@
-"""The opponents you can face, registered as bundles under ``simulator/agents/``.
-
-A checkpoint is not separable from its decklist: every bundle here was trained
-piloting the 60 cards sitting next to it, and handing it someone else's list
-measures neither the policy nor the deck. So one dropdown entry names both.
-
-A registered opponent is a directory in ``simulator/agents/`` holding
-
-    main.py          an ``agent(obs) -> list[int]`` entry point
-    deck.csv         the 60 card ids it was trained on
-    *.pt             the weights
-    policy_network/  the generation of the policy modules those weights fit
-
-which is the same artefact the competition consumes, so what you play against
-here is what would be submitted. To add an opponent, copy a bundle directory in;
-nothing else registers it. Bundles elsewhere in the repo are deliberately *not*
-discovered — several of them fail to load or hang, and a menu that lists
-opponents which cannot play is worse than a short menu.
-
-Each bundle runs in its own process (see ``agent_worker.py``): bundles import
-their policy modules by bare name and ship their own ``cg``/``libcg.so``, so
-whichever loaded first in a shared interpreter would capture those names and run
-the next bundle's weights through the wrong architecture.
-"""
-
 from __future__ import annotations
 
 import json
@@ -34,10 +9,6 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 AGENT_DIR = _HERE / "agents"
 
-# A bundle loads torch and a ~10M-parameter checkpoint before it can answer, so
-# the first response is slow; after that a decision is milliseconds. Both waits
-# are bounded, because a bundle that never answers used to hang the whole server
-# on "starting..." with nothing to report.
 START_TIMEOUT = 180.0
 MOVE_TIMEOUT = 60.0
 
@@ -51,11 +22,6 @@ def _deck_ok(path: Path) -> bool:
 
 
 def discover_bundles() -> dict[str, Path]:
-    """Every registered opponent, keyed by its directory name.
-
-    Registered means: a directory under ``simulator/agents/`` with a ``main.py``,
-    a 60-card ``deck.csv`` and weights to load.
-    """
     found: dict[str, Path] = {}
     if not AGENT_DIR.is_dir():
         return found
@@ -75,7 +41,6 @@ def available_agents() -> list[str]:
 
 
 def agent_arch(bundle: Path) -> dict:
-    """What the bundle's policy is, as recorded by ``describe_agent.py``."""
     path = bundle / "ARCH.json"
     if not path.is_file():
         return {}
@@ -86,7 +51,6 @@ def agent_arch(bundle: Path) -> dict:
 
 
 def agent_deck(spec: str) -> Path:
-    """The decklist that comes with an opponent."""
     bundles = discover_bundles()
     if spec not in bundles:
         raise KeyError(spec)
@@ -103,9 +67,6 @@ class BundleAgent:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             text=True, bufsize=1, cwd=str(bundle),
         )
-        # The worker says "ready" once its policy is loaded. Waiting for it here
-        # means a bundle that cannot load fails when the game is started, with a
-        # message, instead of on its first decision — or never.
         line = self._read(START_TIMEOUT, "loading")
         hello = json.loads(line)
         if not hello.get("ready"):

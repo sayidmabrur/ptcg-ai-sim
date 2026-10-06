@@ -1,22 +1,3 @@
-"""Two-player rooms: a lobby two people meet in, then one shared game.
-
-A room is created by its host, who is given a link to send to the other player.
-Both land on the same address, ``/?room=<id>``: the room is the page, and who
-you are in it is a per-tab token the server issued when you gave your name. The
-token, not anything the browser claims, decides which seat a request speaks
-for -- a player can only ever act for, and be shown, their own seat.
-
-The lobby lives here, in the server; nothing runs until both players have
-picked a deck and said they are ready. Only then does the room get its worker:
-one ``game_worker.py`` process holding one ``PvpBattle`` (the engine can hold a
-single battle per process, see ``sessions.py``), which both players' requests
-are forwarded to with their seat attached.
-
-Rooms are cheap until they start -- a dict entry -- but a started room is a
-process, so they are capped and reaped when nobody has touched them, like the
-single-player sessions.
-"""
-
 from __future__ import annotations
 
 import os
@@ -53,7 +34,7 @@ class Player:
         self.deck: list[int] | None = None
         self.deck_label = ""
         self.ready = False
-        self.seat: int | None = None    # engine seat, fixed when the game starts
+        self.seat: int | None = None
 
 
 class Room:
@@ -63,8 +44,8 @@ class Room:
         self.worker: sessions.Session | None = None
         self.lock = threading.Lock()
         self.touched = time.monotonic()
-        self.status = "lobby"           # lobby -> playing
-        self.error = ""                 # why the last start failed, shown in the lobby
+        self.status = "lobby"
+        self.error = ""
 
     def player(self, token: str | None) -> Player:
         for p in self.players:
@@ -87,7 +68,7 @@ class Room:
 
     def start(self) -> None:
         order = self.players[:]
-        random.shuffle(order)           # who is engine seat 0 is a coin flip
+        random.shuffle(order)
         for seat, p in enumerate(order):
             p.seat = seat
         worker = sessions.Session("room-" + self.id)

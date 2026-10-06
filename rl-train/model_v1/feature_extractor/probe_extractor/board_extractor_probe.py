@@ -4,22 +4,27 @@ import argparse
 import csv
 import random
 import sys
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
 
 _HERE = Path(__file__).resolve().parent
-_RL_TRAIN = _HERE.parents[1]
-sys.path.insert(0, str(_RL_TRAIN))  # helpers.helper
-sys.path.insert(0, str(_RL_TRAIN / "engine"))  # the engine as ``cg``
-sys.path.insert(0, str(_HERE))
+_RL_TRAIN = _HERE.parents[2]
+sys.path.insert(0, str(_RL_TRAIN))
+sys.path.insert(0, str(_RL_TRAIN / "engine"))
+sys.path.insert(0, str(_HERE.parent))
 
 from helpers.helper import build_deck  # noqa: E402
 from cg.api import SelectContext  # noqa: E402
 from cg.game import battle_finish, battle_select, battle_start  # noqa: E402
 
+from cg.api import EnergyType, all_attack, all_card_data  # noqa: E402
 from board_extractor import (  # noqa: E402
     CSV_COLUMNS,
+    ENERGY_COUNT_COLUMNS,
+    MATCHUP_COLUMNS,
+    MAX_PRE_EVOLUTION,
     MAX_BENCH,
     MY_ACTIVE,
     MY_BENCH,
@@ -31,23 +36,74 @@ from board_extractor import (  # noqa: E402
 )
 
 MAX_STEPS = 5000
+CARDS = {c.cardId: c for c in all_card_data()}
+ATTACKS = {a.attackId: a for a in all_attack()}
+
+
+def matching_shortfall(required: list[int], attached: list[int]) -> int:
+    units = []
+    for e in attached:
+        if e == EnergyType.RAINBOW:
+            units.append(None)
+        elif e == EnergyType.TEAM_ROCKET:
+            units += [int(EnergyType.PSYCHIC), int(EnergyType.DARKNESS)]
+        else:
+            units.append(int(e))
+    owner: dict[int, int] = {}
+
+    def augment(i: int, seen: set[int]) -> bool:
+        for j, unit in enumerate(units):
+            if j in seen or not (required[i] == EnergyType.COLORLESS or unit is None or unit == required[i]):
+                continue
+            seen.add(j)
+            if j not in owner or augment(owner[j], seen):
+                owner[j] = i
+                return True
+        return False
+
+    return len(required) - sum(augment(i, set()) for i in range(len(required)))
+
+
+def expected_matchup(pokemon: dict, target: dict | None) -> dict[str, float]:
+    attacks = [ATTACKS[a] for a in CARDS[pokemon["id"]].attacks if a in ATTACKS]
+    out = dict.fromkeys(MATCHUP_COLUMNS, 0.0)
+    if not attacks:
+        return out
+    me, defender = CARDS[pokemon["id"]], CARDS[target["id"]] if target and target["hp"] > 0 else None
+    shortfalls, ratios, kos = [], [], []
+    for attack in attacks:
+        shortfalls.append(matching_shortfall([int(e) for e in attack.energies], [int(e) for e in pokemon["energies"]]))
+        damage = attack.damage
+        if defender is not None and damage > 0:
+            if defender.weakness is not None and me.energyType == defender.weakness:
+                damage *= 2
+            if defender.resistance is not None and me.energyType == defender.resistance:
+                damage = max(0, damage - 30)
+        ratios.append(min(damage / target["hp"], 2.0) if defender is not None else 0.0)
+        kos.append(defender is not None and damage > 0 and damage >= target["hp"])
+    out["has_attack"] = 1.0
+    out["can_attack"] = float(0 in shortfalls)
+    out["min_shortfall"] = float(min(shortfalls))
+    out["best_damage_ratio"] = max(ratios)
+    out["ready_damage_ratio"] = max((r for r, s in zip(ratios, shortfalls) if s == 0), default=0.0)
+    out["ready_ko"] = float(any(k for k, s in zip(kos, shortfalls) if s == 0))
+    out["ko_within_one"] = float(any(k for k, s in zip(kos, shortfalls) if s <= 1))
+    return out | {"_best_shortfalls": sorted({s for s in shortfalls})}
 
 
 def random_choice(select: dict, rng: random.Random) -> list[int]:
-    """A legal selection: between minCount and maxCount distinct option indexes."""
     n_options = len(select["option"])
     count = rng.randint(select["minCount"], min(select["maxCount"], n_options))
     return rng.sample(range(n_options), count)
 
 
 def check(extractor: BoardExtractor, obs: dict, features: dict[str, np.ndarray]) -> list[str]:
-    """Compare the arrays with the raw observation; returns a list of problems."""
     problems = []
     for key, (shape, dtype) in BoardExtractor.SPECS.items():
         arr = features[key]
         if arr.shape != shape or arr.dtype != dtype:
             problems.append(f"{key}: got {arr.shape} {arr.dtype}, want {shape} {np.dtype(dtype)}")
-    for key in ("input_ids", "tools", "energies"):
+    for key in ("input_ids", "tools", "energies", "pre_evolution"):
         if features[key].min() < 0 or features[key].max() >= extractor.vocab_size:
             problems.append(f"{key}: index out of card vocab")
 
@@ -75,17 +131,36 @@ def check(extractor: BoardExtractor, obs: dict, features: dict[str, np.ndarray])
                 row = decoded[slot]
                 if row["hp"] != pokemon["hp"] or row["appear_this_turn"] != pokemon["appearThisTurn"]:
                     problems.append(f"slot {slot}: hp/appear_this_turn mismatch")
+                pre = [extractor._card_index(c["id"]) for c in pokemon["preEvolution"][:MAX_PRE_EVOLUTION]]
+                pre += [0] * (MAX_PRE_EVOLUTION - len(pre))
+                if list(features["pre_evolution"][slot]) != pre:
+                    problems.append(f"slot {slot}: pre_evolution differs from the observation")
+                want = expected_matchup(pokemon, (cur["players"][1 - seat]["active"] or [None])[0])
+                for name in MATCHUP_COLUMNS:
+                    if name == "best_shortfall":
+                        if want["has_attack"] and row[name] not in want["_best_shortfalls"]:
+                            problems.append(f"slot {slot}: best_shortfall {row[name]} is not any attack's shortfall")
+                    elif abs(row[name] - want[name]) > 2e-3:
+                        problems.append(f"slot {slot}: {name} is {row[name]}, recomputed {want[name]:.3f}")
+                effective = Counter(EnergyType(e).name.lower() for e in pokemon["energies"])
+                if {n: row[n] for n in ENERGY_COUNT_COLUMNS} != {f"energy_{t.name.lower()}": effective[t.name.lower()] for t in EnergyType}:
+                    problems.append(f"slot {slot}: effective Energy counts differ from the observation")
+        for slot in range(active_slot, bench_slot + MAX_BENCH):
+            if expected.get(slot) is None and (features["pre_evolution"][slot].any() or features["energy_counts"][slot].any() or features["matchup"][slot].any()):
+                problems.append(f"slot {slot}: empty slot has pre_evolution / energy_counts / matchup")
         available = [features["card_masks"][bench_slot + i] for i in range(MAX_BENCH)]
         if available != [i < player["benchMax"] for i in range(MAX_BENCH)]:
             problems.append(f"seat {seat}: bench card_masks {available} disagrees with benchMax {player['benchMax']}")
         if not features["card_masks"][active_slot]:
             problems.append(f"slot {active_slot}: Active slot masked")
+    if decoded[0]["turn_action_count"] != cur["turnActionCount"]:
+        problems.append(f"turn_action_count {decoded[0]['turn_action_count']}, obs has {cur['turnActionCount']}")
     if not features["card_masks"][STADIUM_IN_PLAY:].all():
         problems.append("stadium / per-turn slots must never be masked")
     if bool(cur["stadium"]) != bool(features["input_ids"][STADIUM_IN_PLAY]):
         problems.append("stadium slot does not match obs")
     for slot, flag in ((19, "supporterPlayed"), (20, "energyAttached"), (21, "stadiumPlayed")):
-        if cur[flag] and features["input_ids"][slot] == 1:  # <HIDDEN>: flag set, but the card was not found in logs
+        if cur[flag] and features["input_ids"][slot] == 1:
             problems.append(f"slot {slot}: {flag} is set but the played card was not found in the logs")
         if cur[flag] != bool(features["input_ids"][slot]):
             problems.append(f"slot {slot}: filled disagrees with {flag}")
@@ -93,7 +168,6 @@ def check(extractor: BoardExtractor, obs: dict, features: dict[str, np.ndarray])
 
 
 def show(extractor: BoardExtractor, obs: dict, features: dict[str, np.ndarray], step: int) -> None:
-    """Print one decision: the raw arrays, then the decoded table."""
     cur, sel = obs["current"], obs["select"]
     print(f"\n=== step {step}: seat {cur['yourIndex']} selecting, turn {cur['turn']}, "
           f"context {SelectContext(sel['context']).name} ===")
@@ -112,7 +186,6 @@ def show(extractor: BoardExtractor, obs: dict, features: dict[str, np.ndarray], 
 
 
 def play(extractor, deck0, deck1, rng, game, writer, show_step, problems) -> tuple[int, int]:
-    """One game; every decision's features go to ``writer``. Returns (result, decisions)."""
     obs, start = battle_start(deck0, deck1)
     if obs is None:
         raise ValueError(f"player {start.errorPlayer}'s deck is illegal (error {start.errorType})")

@@ -1,17 +1,3 @@
-"""Turn a saved game into frames the browser can step through, one per decision.
-
-A replay (``replay_log``'s Parquet, or a Kaggle episode JSON) holds each seat's
-own observation per step, and the engine's full-information ``visualize``
-frames. The board and the log are drawn from the observations, because they are
-in exactly the shape the live game renders from; the full-information frames
-contribute what no single observation has -- both players' hands -- since a
-replay is watched after the game, with nothing left to hide.
-
-Which observation is new at a step is found the way ``PvpBattle`` finds it: the
-seat whose observation changed. Its log reaches back to that seat's previous
-observation, so a running count of events already shown picks out the new ones.
-"""
-
 from __future__ import annotations
 
 import json
@@ -30,7 +16,6 @@ def _replay_files() -> list[Path]:
 
 
 def resolve(name: str) -> Path:
-    """A replay path from the list, refused if it points outside the replay folder."""
     root = replay_log.REPLAY_DIR.resolve()
     path = (root / name).resolve()
     if root not in path.parents or not path.is_file() or path.suffix not in (".parquet", ".json"):
@@ -47,7 +32,6 @@ def _header(path: Path) -> dict:
 
 
 def listing() -> list[dict]:
-    """Every saved game, newest first -- read from headers only."""
     out = []
     root = replay_log.REPLAY_DIR.resolve()
     for path in _replay_files():
@@ -80,7 +64,6 @@ def _load(path: Path) -> dict:
 
 
 def _hand(frame: dict | None, seat: int) -> list[dict] | None:
-    """A player's exact hand from a full-information frame, if it has one."""
     if not frame:
         return None
     try:
@@ -103,7 +86,6 @@ def _decision(select: dict, state: dict, seat: int, action: list[int]) -> str:
 
 
 def frames(path: Path, seat: int) -> dict:
-    """The whole game as seen from ``seat``, both hands face up."""
     episode = _load(path)
     steps = episode["steps"]
     names = episode.get("info", {}).get("TeamNames") or ["Player 1", "Player 2"]
@@ -119,8 +101,6 @@ def frames(path: Path, seat: int) -> dict:
     for k in range(1, len(steps)):
         frame = steps[k]
         actions = [r.get("action") or [] for r in frame]
-        # Who moved, and what they chose: judged against the observation they
-        # chose it from, which is their own last one before this step.
         mover = None
         decision = ""
         if k == 1:
@@ -130,15 +110,12 @@ def frames(path: Path, seat: int) -> dict:
                 if actions[s] and own[s] is not None and own[s].get("select"):
                     mover = s
                     decision = _decision(own[s]["select"], own[s]["current"], s, actions[s])
-        # Which observations are new this step, and the events they carry.
         fresh_logs: list[dict] = []
         board_obs = None
         for s in (0, 1):
             obs = frame[s].get("observation") or {}
             if obs.get("current") is None:
                 continue
-            # Kaggle's replays refresh ``step`` and the clock on a waiting seat's
-            # copy, so those are not what makes an observation new.
             text = json.dumps({k: v for k, v in obs.items() if k not in ("step", "remainingOverageTime")},
                               sort_keys=True)
             if text == previous[s]:
@@ -179,12 +156,8 @@ def frames(path: Path, seat: int) -> dict:
             "moverSeat": mover,
             "decision": decision,
             "result": result,
-            # The engine data behind this frame, for probing its structure: the
-            # actions submitted this step and the observation the board is drawn from.
             "raw": {"step": k, "action": actions, "observation": board_obs},
         })
-    # Kaggle's last frame often carries no new observation, only the rewards;
-    # the verdict then belongs on the last position shown.
     last = steps[-1] if steps else []
     if out and out[-1]["result"] == -1 and last and all(r.get("status") == "DONE" for r in last):
         rewards = [r.get("reward") for r in last]

@@ -1,38 +1,3 @@
-"""Live counterpart of ``dataset.py``: turn the ``cg`` engine's raw ``obs``
-into exactly the observation dict ``PolicyFeatureDataset`` yields.
-
-Usage in a self-play/eval loop::
-
-    feature_extractor = LiveFeatureExtractor()   # full-match defaults (60/60)
-    obs, _ = battle_start(p0, p1)
-    feature_extractor.reset()
-    while obs["current"]["result"] == -1:
-        observation = feature_extractor(obs)      # same shape as dataset[i][0]
-        action = policy.act(obs)
-        feature_extractor.record_action(action)   # so it lands in decision_chain
-        obs = battle_select(action)
-
-Both ``opponent_history`` and ``decision_chain`` span the whole match, so
-they need memory of earlier decisions, which a single ``obs`` doesn't carry.
-This class keeps that memory as a list of rows in the *same* shape
-``convert_replays.py`` writes to Parquet, then hands them to
-``observation.build_observation`` — the identical call ``dataset.py`` makes.
-Assembling features is deliberately not this module's job: sharing one
-implementation is what makes offline and live features the same by
-construction rather than by two implementations happening to agree.
-
-Feeding it both players' decisions is optional, and which to do is a
-property of the ``ObservationSpec``, not of this class.  Under the default
-``own_frames`` spec a policy's ``opponent_history`` is built only from its
-own frames, so an extractor that sees just one player's decisions produces
-the same features as one that sees both — which is what makes this usable in
-the competition harness, where ``agent()`` is never called for the
-opponent's choices.  Under an ``opponent_frames`` spec the opponent's frames
-must be fed in, or their history comes back empty.  ``__call__`` derives the
-deciding player from ``obs["current"]["yourIndex"]``, so a shared instance is
-correct for both seats either way.
-"""
-
 from typing import Any
 
 from features import split_observation
@@ -52,8 +17,6 @@ class LiveFeatureExtractor:
             overrides["opponent_history_size"] = opponent_history_size
         if decision_chain_size is not None:
             overrides["decision_chain_size"] = decision_chain_size
-        # Pass the *same* spec used to build the training set. Defaults
-        # matching is not enough of a guarantee once specs start varying.
         self.spec = spec.variant(**overrides) if overrides else spec
         self.player_names = player_names
         self._episode_id = -1

@@ -1,30 +1,3 @@
-"""One battle, in its own interpreter, answering the server over a pipe.
-
-The native engine keeps its battle pointer on a class attribute, so a process
-holds exactly one game (see ``cg.sim``). That is fine for one player at
-a keyboard and wrong for a server several people can open at once: a second
-visitor starting a game would stomp the first one's board.
-
-So the battle does not live in the web server any more. It lives here, one
-process per session, and the server is a router: it owns no game state, only a
-table of these workers (``sessions.py``). What used to be ``server.py``'s
-module-level ``_battle`` is this module's — unchanged in substance, because the
-isolation is the process boundary rather than any new locking.
-
-The protocol is one JSON object per line, the same shape ``agent_worker.py``
-uses for bundles:
-
-    <- {"op": "new", "agent": ..., "humanDeck": ..., "humanCards": [...], "seat": -1}
-    <- {"op": "state"}
-    <- {"op": "select", "options": [0]}
-    -> {"ok": true, "view": {...}}
-    -> {"ok": false, "status": 400, "detail": "illegal deck: 54/60"}
-
-``status`` is the HTTP status the server should raise, so the browser sees the
-same errors it always did. A worker that dies takes one session's game with it
-and nobody else's.
-"""
-
 from __future__ import annotations
 
 import json
@@ -53,20 +26,14 @@ class Refused(Exception):
 
 
 def _view() -> dict:
-    """The payload for the browser, drawn from the human's own observation."""
     assert _battle is not None
     fresh = _battle.take_logs()
     seat = _battle.human_seat
     _history.extend(render.log_lines(fresh, seat))
-    # This batch as a list of moves: each board with the events that produced
-    # it. Consumed once, with the log lines, so a page reload does not replay a
-    # turn that already ran.
     steps = _battle.take_steps(fresh)
-    # The flat event list the browser narrates, in step order.
     events = [event for step in steps for event in step["events"]]
     obs = _battle.view_obs
     if obs is None:
-        # The agent has the first decision and the human has not observed yet.
         return {
             "ready": False,
             "waitingOn": _agent_name,
@@ -89,8 +56,6 @@ def _view() -> dict:
     view["events"] = events
     view["steps"] = steps
     view["agent"] = _agent_name
-    # A bundle that raised is played on with a legal random move rather than
-    # forfeiting the human's game; say so instead of hiding it.
     view["agentError"] = getattr(_battle.agent, "last_error", None)
     if _battle.finished:
         view["waitingOn"] = "nobody"
@@ -122,8 +87,6 @@ def op_new(request: dict) -> dict:
     else:
         raise Refused(400, "no deck given")
 
-    # The opponent's deck is not a separate choice: a bundle plays the 60 cards
-    # it was trained on.
     agent = request.get("agent", "")
     try:
         agent_deck = engine.read_deck(agent_lib.agent_deck(agent))
@@ -134,7 +97,7 @@ def op_new(request: dict) -> dict:
     seat = seat if seat in (0, 1) else random.randint(0, 1)
     try:
         opponent = agent_lib.build_agent(agent)
-    except Exception as exc:  # a missing checkpoint, a bundle that will not load
+    except Exception as exc:
         raise Refused(400, f"cannot load opponent {agent}: {exc}") from exc
     _agent_name = agent
 
@@ -164,13 +127,6 @@ def op_select(request: dict) -> dict:
     return _view()
 
 
-# -- two players ------------------------------------------------------------
-#
-# A room's worker holds a PvpBattle instead: one engine battle, two people. Each
-# request names the seat it speaks for (the server resolves that from the
-# player's token, never from the browser), and each seat's view is built only
-# from what that seat may see.
-
 _pvp: engine.PvpBattle | None = None
 _pvp_names = ["Player 1", "Player 2"]
 _pvp_history: list[list[str]] = [[], []]
@@ -185,14 +141,7 @@ def _pvp_view(seat: int) -> dict:
     mine = acting == seat and not _pvp.finished
     view = render.build_view(_pvp.obs, seat, other, [], your_turn=mine, result=_pvp.result)
     if not mine:
-        # The current observation is the other seat's. Its own hand and whatever
-        # it is looking at are private to it; build_view already hides the hand
-        # of the seat it is not drawn for, and the looking area is dropped here.
-        # This seat's own hand is not in that observation at all, so the one it
-        # last held is shown until its next decision brings a fresh one.
         view["looking"] = []
-        # The once-per-turn flags are the acting seat's, and the page draws them
-        # on this seat's nameplate; during the other player's turn none apply here.
         view["flags"] = {flag: False for flag in view["flags"]}
         own = _pvp.own_obs[seat]
         if own is not None:
@@ -245,7 +194,6 @@ def op_pvp_state(request: dict) -> dict:
 
 
 def op_pvp_version(request: dict) -> dict:
-    """How far the game has moved, without consuming anything -- for long polls."""
     if _pvp is None:
         raise Refused(409, "the game has not started")
     return {"version": _pvp.version}
@@ -273,8 +221,6 @@ def _reply(payload: dict) -> None:
 
 
 def main() -> None:
-    # Say hello once the engine is imported, the way a bundle does: the server
-    # then knows a worker is usable before it forwards a request to it.
     _reply({"ready": True})
     for line in sys.stdin:
         line = line.strip()
@@ -293,7 +239,7 @@ def main() -> None:
             _reply({"ok": True, "view": handler(request)})
         except Refused as exc:
             _reply({"ok": False, "status": exc.status, "detail": exc.detail})
-        except Exception as exc:  # never take the worker down on one bad request
+        except Exception as exc:
             print(f"game_worker: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
             _reply({"ok": False, "status": 500, "detail": f"{type(exc).__name__}: {exc}"})
 

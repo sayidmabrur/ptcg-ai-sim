@@ -1,15 +1,3 @@
-"""Policy encoder — one architecture family per feature group:
-
-  decision_chain     -> per-step set-pooled features -> TransformerEncoder (sequence)
-  decision_context   -> per-option MLP (scored against the pooled state -> action logits)
-  global_state       -> flat MLP (fixed-size scalars/categoricals)
-  opponent_history   -> per-turn set-pooled diffs -> TransformerEncoder (sequence)
-  state/opponent_state -> per-Pokémon MLP + set pooling (permutation-invariant board)
-
-Deep-but-narrow: hidden width ``D`` stays modest while the two sequence
-encoders (decision_chain, opponent_history) go 8 layers deep.
-"""
-
 from dataclasses import dataclass
 
 import torch
@@ -39,70 +27,29 @@ from vocab import (
     embedding_card_id,
 )
 
-D = 64  # shared embedding/hidden width
+D = 64
 
-#: Dropout probability, applied to every ReLU-terminated MLP block *and*
-#: passed explicitly to the two ``TransformerEncoderLayer`` stacks.
-#:
-#: The transformers always had this — ``nn.TransformerEncoderLayer`` defaults
-#: to ``dropout=0.1`` — but the MLP path (``CardEmbed``, the per-group encoder
-#: heads, ``fuse``) had none, so most of the parameter count was unregularized.
-#: That showed up as a widening train/val gap: on the crustle run, train loss
-#: fell monotonically 0.622 -> 0.564 over epochs 18-22 while val loss bottomed
-#: at 0.828 (epoch 19) and rose every epoch after, with val exact flat at
-#: ~0.71. Threading one value through makes the amount explicit and tunable
-#: from ``bc_train.py`` instead of being an inherited library default on some
-#: layers and absent on the rest.
-#:
-#: Every ``nn.Dropout`` below is *appended* after a block's trailing ReLU
-#: rather than inserted mid-``Sequential``, which keeps each ``Linear`` at the
-#: index it already had — so existing checkpoints still load. ``score`` is left
-#: alone deliberately: it emits the logits, and dropout on an output head just
-#: adds noise to the thing being ranked.
 DEFAULT_DROPOUT = 0.1
 
 
 def _masked_mean(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """Mean-pool ``x`` (..., L, D) over L, respecting a bool ``mask`` (..., L).
-    An all-False row (nothing valid) falls back to zeros rather than NaN."""
     mask = mask.float().unsqueeze(-1)
     denom = mask.sum(dim=-2).clamp(min=1.0)
     return (x * mask).sum(dim=-2) / denom
 
 
-#: Divisor for the sum half of ``_masked_mean_sum``. Card lists here are hands,
-#: discards and benches — a few to a few dozen entries — so this keeps the
-#: summed vector in roughly the same range as the mean half instead of letting
-#: it dominate the shared Linear that consumes both.
 _SUM_SCALE = 10.0
 
 
 def _masked_mean_sum(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """Concat a masked mean with a scaled masked sum, returning ``2 * D``.
-
-    Mean alone is *multiplicity-blind*: a hand holding two Boss's Orders pools
-    to the same vector as a hand holding one, because the duplicate entries
-    average back to the same point. Counting resources is central to TCG
-    decisions ("do I have a second gust?", "how many bodies on the bench?"),
-    so the sum is carried alongside — it grows with copies where the mean does
-    not, and keeping both means identity and quantity are separable.
-    """
     mask_f = mask.float().unsqueeze(-1)
     summed = (x * mask_f).sum(dim=-2)
     denom = mask_f.sum(dim=-2).clamp(min=1.0)
     return torch.cat([summed / denom, summed / _SUM_SCALE], dim=-1)
 
 
-#: Upper bound for the learned position tables. The observation spec caps both
-#: sequences at 60 (``ObservationSpec.decision_chain_size`` /
-#: ``opponent_history_size``); 64 leaves slack so a longer spec doesn't index
-#: out of range.
 MAX_SEQ_LEN = 64
 
-#: Addresses for the board-token lookup: own slots 0..(SIDE_STRIDE-1), opponent slots
-#: SIDE_STRIDE.., and one final id meaning "this option names no Pokemon". A bench holds
-#: at most 8 even with every bench-expanding effect in play, so 9 slots a side (active +
-#: 8) is slack, not a limit.
 SIDE_STRIDE = 9
 NO_SLOT = 2 * SIDE_STRIDE
 BOARD_SLOT_VOCAB = NO_SLOT + 1
@@ -115,22 +62,13 @@ class ReversePositionalEmbedding(nn.Module):
         self.max_len = max_len
 
     def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        lengths = mask.sum(dim=-1, keepdim=True)  # (B, 1)
-        slots = torch.arange(x.shape[1], device=x.device).unsqueeze(0)  # (1, L)
-        # Most recent valid step -> 0, the one before it -> 1, ... Padding
-        # lands on arbitrary indices but is masked out downstream anyway.
+        lengths = mask.sum(dim=-1, keepdim=True)
+        slots = torch.arange(x.shape[1], device=x.device).unsqueeze(0)
         positions = (lengths - 1 - slots).clamp(0, self.max_len - 1)
         return x + self.embed(positions)
 
 
 def _safe_key_padding_mask(valid_mask: torch.Tensor) -> torch.Tensor:
-    """``nn.TransformerEncoder``'s ``src_key_padding_mask`` (True = ignore)
-    from a validity mask (True = real) — but a batch row that's entirely
-    padding (e.g. one sample's chain is shorter than the batch's max, padded
-    to empty) would softmax over an all -inf row internally and produce
-    NaN. Force-unmask position 0 for those rows; the *caller*'s pooling
-    still uses the true ``valid_mask`` (all-False there), so it correctly
-    contributes zero — this only prevents NaN inside the transformer."""
     key_padding_mask = ~valid_mask
     fully_padded = ~valid_mask.any(dim=-1)
     if fully_padded.any():
@@ -140,25 +78,11 @@ def _safe_key_padding_mask(valid_mask: torch.Tensor) -> torch.Tensor:
 
 
 def _causal_mask(length: int, device) -> torch.Tensor:
-    """``(L, L)`` bool attention mask, ``True`` = *forbidden*, allowing each
-    position to attend only to itself and lower indexes.
-
-    Chains are stored **oldest-first** and right-padded, so a lower index is
-    strictly an earlier decision and this is the ordinary "no peeking ahead"
-    mask, not a reversed one.
-    """
     return torch.triu(torch.ones(length, length, dtype=torch.bool, device=device), diagonal=1)
 
 
 def _last_valid(x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """Read out ``x`` (B, L, D) at each row's last real step, per ``mask``
-    (B, L) over a right-padded sequence — i.e. the most recent decision.
-
-    Rows with an entirely empty sequence would gather at a clamped index 0
-    (arbitrary padding), so they are explicitly zeroed: an empty chain must
-    contribute nothing, exactly as ``_masked_mean`` gives zero there.
-    """
-    lengths = mask.sum(dim=-1)  # (B,)
+    lengths = mask.sum(dim=-1)
     index = (lengths - 1).clamp(min=0)
     last = x.gather(1, index.view(-1, 1, 1).expand(-1, 1, x.shape[-1])).squeeze(1)
     return last * mask.any(dim=-1, keepdim=True)
@@ -171,17 +95,9 @@ class CardEmbed(nn.Module):
         self.stage = nn.Embedding(CARD_STAGE_VOCAB_SIZE, dim // 4)
         self.type_embed = nn.Embedding(CARD_TYPE_VOCAB_SIZE, dim // 4)
         self.energy_type = nn.Embedding(CARD_ENERGY_TYPE_VOCAB_SIZE, dim // 4)
-        # Weakness/resistance are the game's damage multipliers (x2 / -30);
-        # without them the model cannot evaluate a matchup at all.
         self.weakness = nn.Embedding(CARD_WEAKNESS_VOCAB_SIZE, dim // 4)
         self.resistance = nn.Embedding(CARD_RESISTANCE_VOCAB_SIZE, dim // 4)
-        # A card's ability, keyed on the skill *name* rather than the card, so
-        # the same printed ability on different Pokémon is one shared vector.
-        # Index 0 is "no skill", which 846 of 1267 cards share.
         self.ability = nn.Embedding(ABILITY_ID_VOCAB_SIZE, dim // 4)
-        # 6 embeddings now (ability joined stage/type/energy_type/weakness/
-        # resistance), 8 scalar flags (skill_count_norm joined the 7), and the
-        # rules-text multi-hot.
         self.proj = nn.Linear(dim + 6 * (dim // 4) + 8 + SKILL_FLAG_COUNT, dim)
         self.drop = nn.Dropout(dropout)
 
@@ -203,20 +119,12 @@ class CardEmbed(nn.Module):
                 fields.get("tera", zeros).float(),
                 fields.get("ace_spec", zeros).float(),
                 stage_norm,
-                # Printed HP on the shared HP/damage scale, and retreat cost —
-                # "how hard is this to kill" and "how hard is it to escape".
                 fields.get("hp_norm", float_zeros),
                 fields.get("retreat_cost_norm", float_zeros),
-                # Whether the card has an ability at all, on the same [0, 1]
-                # scale as the other magnitudes.
                 fields.get("skill_count_norm", float_zeros),
             ],
             dim=-1,
         )
-        # Already float and already carrying its own trailing dim, so it is
-        # concatenated rather than stacked into ``flags``. Zeros for a narrowed
-        # join that didn't request it — same fallback contract as every field
-        # above, just shaped ``(*card_id.shape, SKILL_FLAG_COUNT)``.
         skill_flags = fields.get(
             "skill_flags",
             card_id.new_zeros((*card_id.shape, SKILL_FLAG_COUNT), dtype=torch.float),
@@ -234,8 +142,6 @@ class CardEmbed(nn.Module):
 
 
 def _card_fields(fields: dict, prefix: str) -> dict:
-    """Slice out ``{prefix}_*`` keys into the flat ``{"id": ..., "stage": ...}``
-    dict ``CardEmbed`` expects, from a flat dict keyed like ``f"{prefix}_id"``."""
     return {k[len(prefix) + 1:]: v for k, v in fields.items() if k.startswith(prefix + "_")}
 
 
@@ -246,15 +152,8 @@ class OptionEncoder(nn.Module):
         self.type_embed = nn.Embedding(OPTION_TYPE_VOCAB_SIZE, dim // 4)
         self.area = nn.Embedding(AREA_VOCAB_SIZE, dim // 4)
         self.targets_opponent = nn.Embedding(TARGETS_OPPONENT_VOCAB_SIZE, dim // 4)
-        # ``attack_id`` is an id, so it gets an embedding table like every
-        # other id — it used to be fed as the scalar ``attack_id / 10.0``.
         self.attack = nn.Embedding(ATTACK_ID_VOCAB_SIZE, dim // 4)
-        # Which special condition a SPECIAL_CONDITION option refers to. Without
-        # it every such option in a decision was the same input — see
-        # ``vocab.SPECIAL_CONDITION_VOCAB_SIZE``.
         self.special_condition = nn.Embedding(SPECIAL_CONDITION_VOCAB_SIZE, dim // 4)
-        # 5 embeddings, 9 scalars (``tool_index`` joined the 8), the per-type
-        # energy cost, and the attack's rider-effect multi-hot.
         self.mlp = nn.Sequential(
             nn.Linear(
                 dim + 5 * (dim // 4) + 9 + len(EnergyType) + ATTACK_EFFECT_FLAG_COUNT, dim
@@ -265,28 +164,12 @@ class OptionEncoder(nn.Module):
 
     def forward(self, options: dict) -> torch.Tensor:
         card = self.card(_card_fields(options, "card"))
-        # ``index``/``energy_index``/``in_play_index``/``serial`` are
-        # position/id pointers (NO_VALUE=-1 sentinel), not a fixed vocab —
-        # crude /10 scaling here (not a proper embedding) is the "minimalist"
-        # part, but they matter a lot: these are usually what actually
-        # distinguishes one option from another (e.g. "which hand card by
-        # index"), unlike type/area/card_id which are often shared across
-        # every option in a decision.
-        #
-        # ``attack_damage_norm``/``attack_energy_cost_norm`` are the static
-        # ``Attack`` properties joined in ``dataset._with_attack_flags``.
-        # Damage is on the same scale as every HP field (see ``vocab.HP_CAP``),
-        # so "damage >= defender HP" is a comparison the model can make
-        # directly instead of having to memorize it per attack id.
         scalars = torch.stack(
             [
                 options["number"], options["count"],
                 options["index"].float() / 10.0, options["energy_index"].float() / 10.0,
                 options["in_play_index"].float() / 10.0,
                 options["serial"].float() / 10.0,
-                # Which attached tool a TOOL_CARD option points at — same
-                # pointer-scaling treatment as the index fields above, and the
-                # only thing separating two tools on the same Pokémon.
                 options["tool_index"].float() / 10.0,
                 options["attack_damage_norm"], options["attack_energy_cost_norm"],
             ],
@@ -301,12 +184,7 @@ class OptionEncoder(nn.Module):
                 self.attack(options["attack_id_safe"]),
                 self.special_condition(options["special_condition_type"]),
                 scalars,
-                # Per-energy-type cost vector: paying {G}{C}{C} is a different
-                # problem from paying {F}{C}{C} given what's on the board.
                 options["attack_energy_type_counts"],
-                # What the attack does besides damage: discards your energy,
-                # locks itself out next turn, scales off coin flips, ignores
-                # weakness. Previously only memorisable via ``attack_id``.
                 options["attack_effect_flags"],
             ],
             dim=-1,
@@ -352,14 +230,8 @@ class DecisionChainEncoder(nn.Module):
         self.dim = dim
         self.option = OptionEncoder(dim, dropout)
         self.selection = SelectionEncoder(dim, dropout)
-        # 3 * dim: the menu summary, the selection, and *which option was
-        # actually chosen* (see forward) — plus turn/turn_action_count.
         self.in_proj = nn.Linear(3 * dim + 2, dim)
         self.position = ReversePositionalEmbedding(dim)
-        # norm_first=True (pre-LN). torch defaults to post-LN, which at this
-        # depth needs LR warmup to train stably and otherwise varies wildly
-        # run to run; pre-LN is stable at depth on its own. bc_train.py adds
-        # warmup and grad clipping on top.
         encoder_layer = nn.TransformerEncoderLayer(
             dim, nhead, dim_feedforward=ff_mult * dim, batch_first=True, norm_first=True,
             dropout=dropout,
@@ -367,22 +239,13 @@ class DecisionChainEncoder(nn.Module):
         self.transformer = nn.TransformerEncoder(encoder_layer, layers)
 
     def forward(self, decision_chain: dict):
-        chain_mask = decision_chain["chain_mask"]  # (B, chain_len)
-        if chain_mask.shape[1] == 0:  # every sample in the batch has an empty chain
-            # ``self.dim``, not the module-level ``D``: a network built at any other
-            # width used to emit a 64-wide zero here and blow up the ``fuse`` concat,
-            # but only on batches where *every* sample is a game's first decision.
+        chain_mask = decision_chain["chain_mask"]
+        if chain_mask.shape[1] == 0:
             empty = torch.zeros(chain_mask.shape[0], self.dim, device=chain_mask.device)
             return empty, empty.unsqueeze(1)[:, :0], chain_mask
-        option_vecs = self.option(decision_chain["options"])  # (B, chain_len, max_options, D)
+        option_vecs = self.option(decision_chain["options"])
         option_summary = _masked_mean(option_vecs, decision_chain["options"]["options_mask"])
-        selection_summary = self.selection(decision_chain["selection"])  # (B, chain_len, D)
-        # The chain is the actor's memory of its own past *choices*, but the
-        # two summaries above only describe the menu it was offered — every
-        # option pooled together, with no indication of which one it took.
-        # ``target_action`` holds those choices as option indexes, so gather
-        # the chosen options' own encodings and pool them: that is the signal
-        # that makes this a decision history rather than a menu history.
+        selection_summary = self.selection(decision_chain["selection"])
         chosen_summary = self._chosen(option_vecs, decision_chain)
         step = torch.cat(
             [option_summary, chosen_summary, selection_summary,
@@ -390,12 +253,7 @@ class DecisionChainEncoder(nn.Module):
              decision_chain["turn_action_count"].unsqueeze(-1)],
             dim=-1,
         )
-        step = F.relu(self.in_proj(step))  # (B, chain_len, D)
-        # Recency-indexed positions are kept under the causal mask. They do
-        # tell an early step how long the chain eventually got, but nothing
-        # here is trained to predict step t+1 from step t — only the final
-        # readout is consumed, and at that position "distance back from now"
-        # is the frame the decisions actually condition on.
+        step = F.relu(self.in_proj(step))
         step = self.position(step, chain_mask)
         encoded = self.transformer(
             step,
@@ -413,7 +271,7 @@ class DecisionChainEncoder(nn.Module):
             return option_vecs.new_zeros((*option_vecs.shape[:2], option_vecs.shape[-1]))
         index = targets.clamp(0, num_options - 1)
         index = index.unsqueeze(-1).expand(*index.shape, option_vecs.shape[-1])
-        chosen = option_vecs.gather(dim=2, index=index)  # (B, L, T, D)
+        chosen = option_vecs.gather(dim=2, index=index)
         return _masked_mean(chosen, target_mask)
 
 
@@ -423,15 +281,6 @@ class DecisionContextEncoder(nn.Module):
         self.dim = dim
         self.option = OptionEncoder(dim, dropout)
         self.selection = SelectionEncoder(dim, dropout)
-        # Self-attention *across the options of this decision*. Without it each
-        # option is encoded in isolation and scored as ``score(option_i,
-        # state)``, so option i never sees option j except through a mean-pooled
-        # summary — yet "is this the best play" is inherently comparative:
-        # whether Ultra Ball is right depends on what else is on the menu.
-        # Deliberately NO positional encoding here, unlike the two sequence
-        # encoders: options are a *set*, so permutation-equivariance is correct
-        # (the ordering of the list carries no meaning beyond the index
-        # pointer, which is already a feature).
         encoder_layer = nn.TransformerEncoderLayer(
             dim, nhead, dim_feedforward=ff_mult * dim, batch_first=True, norm_first=True,
             dropout=dropout,
@@ -439,16 +288,13 @@ class DecisionContextEncoder(nn.Module):
         self.option_attention = nn.TransformerEncoder(encoder_layer, layers)
 
     def forward(self, decision_context: dict):
-        # ``options``/``selection`` carry a leading size-1 "chain position"
-        # dim (this is always a single decision, not a real chain) — squeeze
-        # dim 1 specifically, not dim 0 (that's the batch dim).
-        option_vecs = self.option(decision_context["options"]).squeeze(1)  # (B, max_options, D)
-        options_mask = decision_context["options"]["options_mask"].squeeze(1)  # (B, max_options)
+        option_vecs = self.option(decision_context["options"]).squeeze(1)
+        options_mask = decision_context["options"]["options_mask"].squeeze(1)
         option_vecs = self.option_attention(
             option_vecs, src_key_padding_mask=_safe_key_padding_mask(options_mask)
         )
         option_summary = _masked_mean(option_vecs, options_mask)
-        selection_summary = self.selection(decision_context["selection"]).squeeze(1)  # (B, D)
+        selection_summary = self.selection(decision_context["selection"]).squeeze(1)
         pooled = torch.cat([option_summary, selection_summary], dim=-1)
         return pooled, option_vecs, options_mask
 
@@ -462,11 +308,6 @@ class OptionCrossAttention(nn.Module):
             dropout=dropout,
         )
         self.decoder = nn.TransformerDecoder(decoder_layer, layers)
-        # The state token and the chain tokens live in the same memory
-        # sequence and are otherwise indistinguishable to the attention (the
-        # memory carries no positional signal — the chain states already
-        # encode their own recency). This marker keeps "the state" separable
-        # from "a past decision".
         self.state_marker = nn.Parameter(torch.zeros(dim))
 
     def zero_residual_branches(self) -> None:
@@ -480,19 +321,11 @@ class OptionCrossAttention(nn.Module):
     def forward(self, option_vecs, options_mask, state, chain_steps, chain_mask,
                 memory_extra=None, memory_extra_mask=None):
         memory = torch.cat([(state + self.state_marker).unsqueeze(1), chain_steps], dim=1)
-        # The state token's own "not padding" column is built from the batch
-        # size rather than by slicing ``chain_mask``: at the very first
-        # decision of a game every chain is empty, so ``chain_mask`` is
-        # (B, 0) and ``chain_mask[:, :1]`` is (B, 0) too — which silently
-        # produced a zero-width mask against a length-1 memory.
         state_is_real = torch.zeros(
             chain_mask.shape[0], 1, dtype=torch.bool, device=chain_mask.device
         )
         memory_padding = torch.cat([state_is_real, ~chain_mask], dim=1)
         if memory_extra is not None:
-            # Board slots join the same memory sequence, so an option can attend to the
-            # Pokemon it names instead of only to a pooled board summary. An empty slot
-            # is padding: attending to it would be attending to a zero vector.
             memory = torch.cat([memory, memory_extra], dim=1)
             memory_padding = torch.cat([memory_padding, ~memory_extra_mask], dim=1)
         return self.decoder(
@@ -514,13 +347,9 @@ class GlobalStateEncoder(nn.Module):
         )
 
     def forward(self, global_state: dict) -> torch.Tensor:
-        # ``looking_card``'s id field is ``looking_card_ids`` (plural, from
-        # ``transform_global_state``), unlike every other card slot's
-        # ``..._id`` — so ``_card_fields`` slices it out as ``ids``, not the
-        # ``id`` key ``CardEmbed`` expects. Patch it back before embedding.
         looking_fields = _card_fields(global_state, "looking_card")
         looking_fields["id"] = looking_fields.pop("ids")
-        looking_vecs = self.stadium_card(looking_fields)  # (B, max_looking, D)
+        looking_vecs = self.stadium_card(looking_fields)
         looking_card = _masked_mean(looking_vecs, global_state["looking_card_mask"])
         bits = torch.stack(
             [
@@ -532,9 +361,6 @@ class GlobalStateEncoder(nn.Module):
         )
         out = torch.cat(
             [
-                # Concatenated, not summed: the stadium in play and the cards
-                # being looked at are unrelated facts, and adding two CardEmbed
-                # outputs makes them indistinguishable from each other.
                 self.stadium_card(_card_fields(global_state, "stadium_card")),
                 looking_card,
                 self.first_player(global_state["first_player"]),
@@ -554,20 +380,17 @@ class PokemonEncoder(nn.Module):
         self.energy_card = CardEmbed(dim, dropout)
         self.tool_card = CardEmbed(dim, dropout)
         self.pre_evolution_card = CardEmbed(dim, dropout)
-        # Every attached list is pooled mean+sum: how *many* energy are on a
-        # Pokémon decides whether its attack is payable at all, and a mean
-        # over the attached energy is identical for one Fire and three Fire.
         self.mlp = nn.Sequential(
             nn.Linear(dim + 2 * (dim // 4) + 6 * dim + 2, dim), nn.ReLU(),
             nn.Dropout(dropout),
         )
 
     def _pool_list(self, module, pokemon: dict, prefix: str) -> torch.Tensor:
-        vecs = module(_card_fields(pokemon, prefix))  # (..., max_width, D)
+        vecs = module(_card_fields(pokemon, prefix))
         return _masked_mean_sum(vecs, pokemon[f"{prefix}_mask"])
 
     def forward(self, pokemon: dict) -> torch.Tensor:
-        energy_vecs = self.energy(pokemon["energies"])  # (..., max_energies, dim // 4)
+        energy_vecs = self.energy(pokemon["energies"])
         energy_vec = _masked_mean_sum(energy_vecs, pokemon["energies_mask"])
         out = torch.cat(
             [
@@ -589,24 +412,20 @@ class PlayerStateEncoder(nn.Module):
         self.pokemon = PokemonEncoder(dim, dropout)
         self.hand_card = CardEmbed(dim, dropout)
         self.discard_card = CardEmbed(dim, dropout)
-        # active (dim) + bench/hand/discard pooled mean+sum (2 * dim each) + 9
-        # status scalars. Hand and bench counts are decision-critical: "a
-        # second Ultra Ball" and "a fourth body on the bench" are exactly the
-        # facts a mean pool erases.
         self.mlp = nn.Sequential(
             nn.Linear(7 * dim + 9, dim), nn.ReLU(), nn.Dropout(dropout)
         )
 
     def _pool_cards(self, module, fields: dict, prefix: str) -> torch.Tensor:
-        vecs = module(_card_fields(fields, prefix))  # (B, max_width, D)
+        vecs = module(_card_fields(fields, prefix))
         return _masked_mean_sum(vecs, fields[f"{prefix}_mask"])
 
     def pokemon_tokens(self, player_state: dict):
         active = (
             self.pokemon(player_state["active_pokemon"])
             * player_state["active_pokemon"]["present"].unsqueeze(-1)
-        ).unsqueeze(1)  # (B, 1, D)
-        bench = self.pokemon(player_state["bench_pokemon"])  # (B, max_bench, D)
+        ).unsqueeze(1)
+        bench = self.pokemon(player_state["bench_pokemon"])
         active_mask = player_state["active_pokemon"]["present"].bool().unsqueeze(1)
         bench_mask = player_state["bench_pokemon"]["bench_pokemon_mask"].bool()
         return torch.cat([active, bench], dim=1), torch.cat([active_mask, bench_mask], dim=1)
@@ -616,12 +435,7 @@ class PlayerStateEncoder(nn.Module):
             self.pokemon(player_state["active_pokemon"])
             * player_state["active_pokemon"]["present"].unsqueeze(-1)
         )
-        # ``bench_pokemon`` is already a batched dict of (B, max_bench, ...)
-        # tensors (collate.py's collate_bench_pokemon) — one PokemonEncoder
-        # call over the whole grid, not a Python loop per slot, since every
-        # op inside it (CardEmbed, _masked_mean) is already leading-dim
-        # agnostic.
-        bench_vecs = self.pokemon(player_state["bench_pokemon"])  # (B, max_bench, D)
+        bench_vecs = self.pokemon(player_state["bench_pokemon"])
         bench_vec = _masked_mean_sum(
             bench_vecs, player_state["bench_pokemon"]["bench_pokemon_mask"]
         )
@@ -648,9 +462,6 @@ class OpponentHistoryEncoder(nn.Module):
         self.new_pokemon_card = CardEmbed(dim, dropout)
         self.removed_pokemon_card = CardEmbed(dim, dropout)
         self.energy_attached_card = CardEmbed(dim, dropout)
-        # 8 * dim: four card groups, each pooled as mean+sum (2 * dim apiece) —
-        # "they discarded three Water Energy" is a different fact from
-        # "they discarded a Water Energy", and a mean cannot tell them apart.
         self.in_proj = nn.Linear(8 * dim + 5 + 5, dim)
         self.position = ReversePositionalEmbedding(dim)
         encoder_layer = nn.TransformerEncoderLayer(
@@ -660,9 +471,8 @@ class OpponentHistoryEncoder(nn.Module):
         self.transformer = nn.TransformerEncoder(encoder_layer, layers)
 
     def forward(self, history: dict) -> torch.Tensor:
-        history_mask = history["history_mask"]  # (B, chain_len)
-        if history_mask.shape[1] == 0:  # every sample in the batch has empty history
-            # ``self.dim`` for the same reason as in DecisionChainEncoder.forward.
+        history_mask = history["history_mask"]
+        if history_mask.shape[1] == 0:
             return torch.zeros(history_mask.shape[0], self.dim, device=history_mask.device)
         discarded = _masked_mean_sum(
             self.discarded_card(_card_fields(history, "discarded_card")), history["discarded_mask"]
@@ -691,32 +501,15 @@ class OpponentHistoryEncoder(nn.Module):
             ],
             dim=-1,
         )
-        step = F.relu(self.in_proj(step))  # (B, chain_len, D)
+        step = F.relu(self.in_proj(step))
         step = self.position(step, history_mask)
         encoded = self.transformer(step, src_key_padding_mask=_safe_key_padding_mask(history_mask))
         return _masked_mean(encoded, history_mask)
 
 
-#: Finite stand-in for -inf on masked-out options. ``log_softmax`` over a row
-#: containing -inf is fine mathematically but produces NaN gradients through
-#: the masked entries, so the competition is restricted with a large negative
-#: number instead (softmax weight ~1e-40, i.e. numerically excluded).
 _MASK_LOGIT = -1e9
 
 
-#: Option fields that decide whether two options are the *same play*.
-#: Deliberately excludes ``index``/``serial``/``energy_index``: those are
-#: pointers into a pile of cards, so two options differing only there
-#: (hand slot 3 vs slot 5, both holding an Ultra Ball) do exactly the same
-#: thing. ``in_play_index`` is kept — it names *which* Pokémon is targeted,
-#: and two board Pokémon differ in HP and attached energy even when they
-#: share a card id. The ``card_*``/``attack_*`` flags are omitted as
-#: redundant: they are pure functions of ``card_id``/``attack_id_safe``.
-#: ``special_condition_type`` is included for the same reason
-#: ``in_play_index`` is: it names *what* the option does, not where a card sits.
-#: Curing a Poison and curing a Burn are different plays, and while it was
-#: untensorised they compared equal on every field here and were silently
-#: treated as a tie group.
 _EQUIVALENCE_FIELDS = (
     "type", "area", "targets_opponent", "card_id",
     "number", "count", "attack_id_safe", "in_play_index",
@@ -727,27 +520,13 @@ _EQUIVALENCE_FIELDS = (
 def equivalence_mask(
     options: dict, targets: torch.Tensor, options_mask: torch.Tensor
 ) -> torch.Tensor:
-    """``(B, N)`` bool marking every option that is the same play as the
-    expert's chosen option.
-
-    Measured on ``policy_decisions.parquet``, **50.5%** of single-select
-    decisions offer at least one option behaviourally identical to the one
-    the expert took, in tie groups 2-8 wide — and the expert resolves those
-    ties essentially arbitrarily (lowest index only 44.3% of the time). So
-    scoring a prediction against the one *index* the expert happened to click
-    charges the model for plays that are literally the same move, and caps
-    exact-index accuracy at ~63.7% no matter how good the policy is.
-
-    Only the first target is expanded, so this is meaningful for
-    single-select decisions; callers restrict its use accordingly.
-    """
     feats = torch.stack(
         [options[field].squeeze(1).float() for field in _EQUIVALENCE_FIELDS], dim=-1
-    )  # (B, N, F)
+    )
     target_index = targets.argmax(dim=-1)
     chosen = feats.gather(
         1, target_index.view(-1, 1, 1).expand(-1, 1, feats.shape[-1])
-    )  # (B, 1, F)
+    )
     return (feats == chosen).all(dim=-1) & options_mask
 
 
@@ -757,41 +536,6 @@ def masked_selection_loss(
     mask: torch.Tensor,
     equivalent: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    """Negative log-likelihood of the expert's selection, per decision.
-
-    The right likelihood depends on what kind of choice the decision is, and
-    these two cases are genuinely different distributions:
-
-    *Single-select* (93.6% of decisions in ``policy_decisions.parquet``: the
-    expert picks exactly one of a mean 8.2 options) is **categorical**. The
-    options compete for one slot, so softmax cross-entropy is its likelihood
-    — and softmax is what encodes that competition. Scoring it as N
-    independent Bernoullis instead, as ``masked_bce_loss`` did, is both the
-    wrong model and badly conditioned: with ~1 positive among 8 options, ~86%
-    of the gradient comes from easy negatives, which compresses every
-    probability toward zero. That is why a decode threshold had to be swept
-    and calibrated per checkpoint, landing near 0.02-0.12 with a flat curve —
-    the ranking was barely separated. Under cross-entropy the probabilities
-    are a real distribution over options and ``argmax`` is simply correct.
-
-    *Multi-select* (a discard-two, an ordering) really is a set choice, so it
-    keeps a Bernoulli likelihood — summed over valid options rather than
-    averaged, which makes it a joint log-likelihood on the same scale as the
-    cross-entropy term so the two can be averaged together per decision
-    without one silently dominating. Decisions selecting *nothing* (0.3%,
-    declining an optional effect) fall here too, where an all-zero target is
-    exactly right.
-
-    ``equivalent`` (from ``equivalence_mask``) makes the single-select term
-    indifferent between options that are the *same play*: instead of
-    maximising the probability of one arbitrary index, it maximises the total
-    probability of the whole tie group, ``-log sum_{i in group} p_i``. Since
-    the expert resolves those ties arbitrarily, the index-specific objective
-    was asking the model to fit coin flips — capacity spent on noise, and a
-    hard ceiling on the metric. This keeps the likelihood proper (the group
-    probabilities are a partition of the same softmax) while dropping the part
-    that was never learnable.
-    """
     safe = logits.masked_fill(~mask, _MASK_LOGIT)
     num_positive = targets.sum(dim=-1)
     single = num_positive == 1
@@ -818,44 +562,15 @@ def masked_selection_loss(
 
 
 def masked_bce_loss(logits: torch.Tensor, targets: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """BCE-with-logits over valid (masked-in) option positions only.
-
-    ``logits`` comes back from ``PolicyNetwork`` with masked-out positions
-    set to ``-inf`` (correct for inference — argmax/topk naturally ignore
-    them). But ``F.binary_cross_entropy_with_logits`` internally computes
-    ``-x * z``, and ``-inf * 0`` (a masked logit times its zero target) is
-    ``NaN``, not the ``0`` it conceptually should contribute — so those
-    ``-inf``s have to be swapped for a finite placeholder (any value works,
-    since the masked term is then explicitly excluded from the mean, not
-    just hoped-to-cancel) before computing the loss."""
     safe_logits = logits.masked_fill(~mask, 0.0)
     per_option = F.binary_cross_entropy_with_logits(safe_logits, targets, reduction="none")
     return (per_option * mask).sum() / mask.sum().clamp(min=1)
 
 
-#: Probability above which an option is selected, for the decisions where the
-#: count is genuinely free — optional (``minCount == 0``) and multi-select
-#: (``maxCount > 1``), together ~17% of decisions. The other ~83% are
-#: single-select, where the bracket forces one pick and this is ignored
-#: entirely: that case is a plain argmax over the categorical distribution
-#: ``masked_selection_loss`` fits with softmax cross-entropy.
-#:
-#: A fixed default is enough now. It was not under the old ``masked_bce_loss``,
-#: which scored a 1-of-N choice as N independent Bernoullis and so compressed
-#: every probability toward zero — that left the useful cut on a knife edge
-#: (0.5 declined 44% of optional effects outright) and needed a per-checkpoint
-#: sweep to place. Cross-entropy removed the compression, and the model's
-#: probabilities are now well enough separated that this value does not matter:
-#: measured over 210 live decisions, every threshold from 0.02 to 0.15 decodes
-#: *identically*, and only at 0.30+ does anything change at all. Calibrating a
-#: parameter that provably changes nothing is worse than a constant — it
-#: implies a precision that isn't there, and a stale calibration file then
-#: reads as a live misconfiguration.
 DEFAULT_THRESHOLD = 0.15
 
 
 def load_policy(checkpoint, map_location="cpu") -> "PolicyNetwork":
-    """Load a checkpoint's weights, ready for inference."""
     network = PolicyNetwork()
     network.load_state_dict(torch.load(checkpoint, map_location=map_location))
     network.eval()
@@ -869,59 +584,10 @@ def decode_action(
     max_count: torch.Tensor,
     threshold: float = DEFAULT_THRESHOLD,
 ) -> list[list[int]]:
-    """Turn a batch of option logits into the actual selections to submit.
-
-    The engine imposes a hard ``[minCount, maxCount]`` bracket per decision,
-    and that bracket is what decides how this behaves:
-
-    When ``maxCount == minCount == 1`` — the 93.6% single-select case that
-    ``masked_selection_loss`` trains with softmax cross-entropy — the clamps
-    below force ``count == 1`` and the top-scoring option is taken. That is
-    plain ``argmax`` over the categorical distribution the loss actually fit,
-    and ``threshold`` cannot affect it at all.
-
-    ``threshold`` only comes into play where the count is genuinely free:
-    multi-select decisions (``maxCount > 1``), which the loss still models as
-    independent Bernoullis, so a per-option probability cut is the matching
-    decode there.
-
-    It is deliberately NOT allowed to empty a selection. ``minCount == 0``
-    decisions (an optional effect, e.g. a Pokédex or a Hilda) are the ones
-    where a low-confidence row could decode to nothing at all, and on those
-    the threshold is reading a quantity training never constrained: an
-    optional decision the expert *accepted* carries a single positive target,
-    so ``masked_selection_loss`` scores it through the softmax cross-entropy
-    branch — and softmax CE is invariant to adding a constant to every logit
-    in a row. Only the differences between logits are fit; the absolute level
-    is free, and the only thing pulling on it is the Bernoulli branch, whose
-    mostly-zero targets drag it down. ``sigmoid(logit) > threshold`` then asks
-    that unpinned level a question it cannot answer.
-
-    Measured on ``policy_decisions_crustle.parquet`` the damage is large: the
-    expert declines an optional selection 4.0% of the time, while the
-    unfloored decode returned nothing on 29.0% of them, and flooring the count
-    at one lifted exact-match on that subset from 61.0% to 82.0%.
-
-    The floor concedes the genuine declines (4.0%, hence the 96% ceiling it
-    implies) in exchange for the 25 points of spurious ones. Recovering them
-    properly means making "decline" an explicit null option so it competes
-    inside the same softmax the loss actually fits, rather than being inferred
-    from an uncalibrated absolute probability — that is a retrain, not a
-    decode change.
-
-    Within the clamp options are taken in descending confidence, so when the
-    threshold under-selects the next-most-confident options fill the gap, and
-    when it over-selects the least confident ones are dropped first.
-
-    Returns one list of option indexes per batch element (unlike the rest of
-    this module it is not a tensor, because the counts are ragged).
-    """
     probs = torch.sigmoid(logits).masked_fill(~options_mask, -1.0)
     num_valid = options_mask.sum(-1)
 
     count = (probs > threshold).sum(-1)
-    # Floored at one, not at ``min_count`` — see above. ``num_valid`` still
-    # clamps it back to zero below for a decision offering no valid option.
     count = torch.maximum(count, min_count.clamp(min=1))
     count = torch.minimum(count, max_count)
     count = torch.minimum(count, num_valid).clamp(min=0)
@@ -931,14 +597,6 @@ def decode_action(
 
 
 def selection_counts(features: dict) -> tuple[torch.Tensor, torch.Tensor]:
-    """Recover the raw ``(minCount, maxCount)`` bracket of the *current*
-    decision from a collated feature batch, as ``(B,)`` long tensors.
-
-    ``dataset.transform`` stores them ``_normalize``d by the fixed
-    ``min_count``/``max_count`` cap of 60 (deck size), and carries a length-1
-    "chain" dim for the single current decision — this undoes both, so
-    ``decode_action`` can be fed straight from a batch without the caller
-    having to know that encoding."""
     selection = features["decision_context"]["selection"]
     min_count = (selection["min_count"] * 60.0).round().long().reshape(-1)
     max_count = (selection["max_count"] * 60.0).round().long().reshape(-1)
@@ -965,55 +623,29 @@ class PolicyNetwork(nn.Module):
         self.global_state = GlobalStateEncoder(dim, dropout)
         self.opponent_history = OpponentHistoryEncoder(
             dim, nhead=nhead, layers=hist_layers, dropout=dropout, ff_mult=ff_mult)
-        self.player_state = PlayerStateEncoder(dim, dropout)  # shared weights: self & opponent boards
-        # 7*dim: decision_chain + ctx_pooled (2*dim) + global_state +
-        # opponent_history + own board + opponent board.
+        self.player_state = PlayerStateEncoder(dim, dropout)
         self.fuse = nn.Sequential(nn.Linear(7 * dim, dim), nn.ReLU(), nn.Dropout(dropout))
         self.option_cross = OptionCrossAttention(
             dim, nhead=nhead, layers=cross_layers, dropout=dropout, ff_mult=ff_mult)
         self.score = nn.Sequential(nn.Linear(2 * dim, dim), nn.ReLU(), nn.Linear(dim, 1))
         self.type_conditioned = type_conditioned
         if type_conditioned:
-            # (a) A free logit level per OptionType. One shared ``score`` MLP has to rank
-            # every category on one scale — an ATTACH against a PLAY against END — and
-            # the only thing that could express "how attractive is ending the turn at
-            # all" was an emergent property of that MLP, competing for the same weights
-            # that pick *which* attach. This is that quantity, held explicitly: 17
-            # numbers, one per category, added to the logit.
-            #
-            # Zero-init, so an untrained bias is an exact no-op and a warm start
-            # reproduces the checkpoint it came from bit-for-bit.
             self.type_bias = nn.Embedding(OPTION_TYPE_VOCAB_SIZE, 1)
             nn.init.zeros_(self.type_bias.weight)
-            # (b) FiLM the scoring query on what kind of decision this is. ``select_type``
-            # and ``select_context`` reach the scorer today only through
-            # ``SelectionEncoder`` -> ``ctx_pooled`` -> ``fuse``, i.e. as one of seven
-            # concatenated blocks diluted into a single state vector. But a MAIN menu and
-            # a "discard exactly two" prompt are not the same ranking problem, and the
-            # scorer is one function serving both. A multiplicative gate lets the
-            # decision kind reshape the query rather than merely shift it.
             self.select_type_embed = nn.Embedding(SELECT_TYPE_VOCAB_SIZE, dim // 4)
             self.select_context_embed = nn.Embedding(SELECT_CONTEXT_VOCAB_SIZE, dim // 4)
             film = nn.Linear(2 * (dim // 4), 2 * dim)
-            # Zero-init again: gamma == 0 -> scale (1 + gamma) == 1 and beta == 0, so the
-            # gate starts as the identity and the same warm-start guarantee holds.
             nn.init.zeros_(film.weight)
             nn.init.zeros_(film.bias)
             self.select_film = film
         self.board_tokens = board_tokens
         if board_tokens:
-            # A learned address, shared by the two sides of the lookup: the same table
-            # tags each board token with the slot it occupies AND tags each option with
-            # the slot it names. Matching addresses is what lets cross-attention route an
-            # option to the Pokemon it targets rather than to a pooled average.
             self.slot_embed = nn.Embedding(BOARD_SLOT_VOCAB, dim)
 
     @staticmethod
     def _named_slot(options: dict) -> torch.Tensor:
         def board_pointer(area: torch.Tensor, index: torch.Tensor) -> tuple:
             on_board = (area == AreaType.ACTIVE) | (area == AreaType.BENCH)
-            # A bench pointer needs a real index; the active slot is addressed by area
-            # alone (its index is always 0 in the corpus, but NO_VALUE would be legal).
             valid = on_board & ((area != AreaType.BENCH) | (index >= 0))
             within = torch.where(area == AreaType.BENCH, index.clamp(min=0) + 1,
                                  torch.zeros_like(index))
@@ -1027,13 +659,9 @@ class PolicyNetwork(nn.Module):
         )
         opponent = options["targets_opponent"].squeeze(1)
 
-        # ``targets_opponent`` is 0/1/2 with 2 = "the engine did not say", which happens
-        # exactly on the ``in_play_*`` options — all of which are own-board. So "== 1"
-        # is the right test on both branches: unknown falls to the own side.
         side = (opponent == 1).long() * SIDE_STRIDE
         no_slot = torch.full_like(area_within, NO_SLOT)
         slot = torch.where(area_valid, (area_within + side).clamp(max=NO_SLOT - 1), no_slot)
-        # in_play_* takes precedence, and is own-board regardless of ``side``.
         slot = torch.where(in_play_valid, in_play_within.clamp(max=SIDE_STRIDE - 1), slot)
         return slot
 
@@ -1045,8 +673,6 @@ class PolicyNetwork(nn.Module):
         opp, opp_mask = self.player_state.pokemon_tokens(features["opponent_state"])
 
         def addressed(tokens: torch.Tensor, offset: int) -> torch.Tensor:
-            # Per tensor, not shared: the two boards are padded to their own bench
-            # widths within a batch and are frequently different sizes.
             slots = torch.arange(tokens.shape[1], device=tokens.device)
             slots = slots.clamp(max=SIDE_STRIDE - 1) + offset
             return tokens + self.slot_embed(slots).unsqueeze(0)
@@ -1064,9 +690,6 @@ class PolicyNetwork(nn.Module):
 
     def encode(self, features: dict):
         ctx_pooled, option_vecs, options_mask = self.decision_context(features["decision_context"])
-        # The chain is encoded before the fuse (not inside the cat) because its
-        # per-step states are needed again *after* it, as cross-attention
-        # memory.
         chain_state, chain_steps, chain_mask = self.decision_chain(features["decision_chain"])
         state = self.fuse(
             torch.cat(
@@ -1075,13 +698,6 @@ class PolicyNetwork(nn.Module):
                     ctx_pooled,
                     self.global_state(features["global_state"]),
                     self.opponent_history(features["opponent_history"]),
-                    # Concatenated, NOT averaged. Sharing the encoder is right
-                    # (a board is a board), but averaging its two outputs is
-                    # symmetric in (self, opponent) — it made the logits
-                    # provably identical when the two boards were swapped, i.e.
-                    # the model could not tell whose 300 HP attacker it was
-                    # looking at. Concatenation keeps the encoder shared and
-                    # the two roles distinct.
                     self.player_state(features["state"]),
                     self.player_state(features["opponent_state"]),
                 ],
@@ -1101,11 +717,7 @@ class PolicyNetwork(nn.Module):
         return state, option_vecs, options_mask
 
     def score_options(self, option_vecs, state, features: dict):
-        # The concatenated query is kept on top of the cross-attention: pre-LN
-        # blocks are residual, so an untrained ``option_cross`` starts as
-        # near-identity and this remains exactly the old scoring path at
-        # init — the cross-attention adds to it rather than replacing it.
-        query = state.unsqueeze(1).expand(-1, option_vecs.size(1), -1)  # (B, max_options, D)
+        query = state.unsqueeze(1).expand(-1, option_vecs.size(1), -1)
         if self.type_conditioned:
             selection = features["decision_context"]["selection"]
             kind = torch.cat(
@@ -1114,10 +726,10 @@ class PolicyNetwork(nn.Module):
                     self.select_context_embed(selection["context"].squeeze(1)),
                 ],
                 dim=-1,
-            )  # (B, 2 * (D // 4))
-            gamma, beta = self.select_film(kind).chunk(2, dim=-1)  # (B, D) each
+            )
+            gamma, beta = self.select_film(kind).chunk(2, dim=-1)
             query = query * (1.0 + gamma.unsqueeze(1)) + beta.unsqueeze(1)
-        logits = self.score(torch.cat([option_vecs, query], dim=-1)).squeeze(-1)  # (B, max_options)
+        logits = self.score(torch.cat([option_vecs, query], dim=-1)).squeeze(-1)
         if self.type_conditioned:
             logits = logits + self.type_bias(
                 features["decision_context"]["options"]["type"].squeeze(1)
@@ -1126,8 +738,6 @@ class PolicyNetwork(nn.Module):
 
 
 if __name__ == "__main__":
-    # Smoke test with a real (small) batch — forward() is batch-only now;
-    # see bc_train.py for the actual training loop with collate.py.
     from collate import collate_features, pad_stack
 
     dataset = PolicyFeatureDataset(

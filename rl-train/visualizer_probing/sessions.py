@@ -1,24 +1,3 @@
-"""One game per visitor, as one worker process per session.
-
-The engine holds its battle on a class attribute, so a process plays one game.
-The web server therefore keeps no battle of its own: it keeps a table of
-``game_worker.py`` processes, one per browser session, and forwards each request
-to the worker that belongs to the caller. Two people can play at once because
-their games are in different processes, which is the only isolation the native
-engine allows.
-
-A session costs real memory: the worker imports the engine, and the bundle it
-plays against loads torch and a checkpoint in a third process. ``MAX_SESSIONS``
-is therefore a hard cap and idle games are reaped, because a public Space that
-runs out of memory kills everybody's game rather than the one that walked away.
-
-Sessions are identified by an id the browser generates and sends as
-``X-Session``, not by a cookie: the Space is normally viewed inside an iframe on
-huggingface.co, where the Space's own cookies are third-party and quietly
-dropped by default in current browsers. A header the page controls works the
-same in an iframe as on the direct URL.
-"""
-
 from __future__ import annotations
 
 import json
@@ -33,16 +12,10 @@ from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
 
-# A worker imports the engine before it answers; a bundle then loads torch and a
-# checkpoint on the first "new". Both waits are bounded so a stuck worker fails
-# one request with a message instead of hanging a connection forever.
 BOOT_TIMEOUT = 60.0
-NEW_TIMEOUT = 240.0     # covers the bundle's own START_TIMEOUT (180 s)
+NEW_TIMEOUT = 240.0
 REQUEST_TIMEOUT = 90.0
 
-# How many games may run at once, and how long a game may sit untouched before
-# its processes are reclaimed. Both are overridable from the environment because
-# the right numbers are a property of the machine, not of the code.
 MAX_SESSIONS = int(os.environ.get("PTCG_MAX_SESSIONS", "4"))
 IDLE_TIMEOUT = float(os.environ.get("PTCG_IDLE_TIMEOUT", str(20 * 60)))
 
@@ -65,7 +38,7 @@ class Session:
         self.lock = threading.Lock()
         self.touched = time.monotonic()
         self.started = time.monotonic()
-        self.playing = False       # has a game been started in this worker?
+        self.playing = False
         self.process = subprocess.Popen(
             [sys.executable, str(_HERE / "game_worker.py")],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -128,11 +101,6 @@ class Registry:
     def _reap(self) -> None:
         now = time.monotonic()
         for sid, session in list(self._sessions.items()):
-            # Never reclaim a session that is mid-request: closing its stdin
-            # under the thread reading its stdout would fail a live game. The
-            # timeouts already make this arithmetically impossible (a request is
-            # bounded well below IDLE_TIMEOUT), which is a reason to check
-            # rather than to rely on the arithmetic staying true.
             if session.lock.locked():
                 continue
             dead = session.process.poll() is not None
